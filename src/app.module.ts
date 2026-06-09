@@ -12,6 +12,8 @@ import { UsersModule } from './modules/users/users.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { DrugsModule } from './modules/drugs/drugs.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 @Module({
   imports: [
@@ -29,6 +31,8 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
     ReservationsModule,
     NotificationsModule,
     WebhooksModule,
+    DrugsModule,
+    InventoryModule,
   ],
 })
 export class AppModule {}
