@@ -31,11 +31,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         const resObj = res as Record<string, unknown>;
         message = Array.isArray(resObj['message'])
           ? (resObj['message'] as string[]).join(', ')
-          : (resObj['message'] as string) ?? exception.message;
+          : ((resObj['message'] as string) ?? exception.message);
         code = (resObj['error'] as string) ?? this.statusToCode(status);
       }
     } else if (exception instanceof Error) {
-      this.logger.error(exception.message, exception.stack, 'GlobalExceptionFilter');
+      this.logger.error(
+        exception.message,
+        exception.stack,
+        'GlobalExceptionFilter',
+      );
     }
 
     response.status(status).json({
