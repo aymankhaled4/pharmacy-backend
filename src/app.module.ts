@@ -9,6 +9,7 @@ import { openaiConfig } from './config/openai.config';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { ReservationsModule } from './modules/reservations/reservations.module';
 
 @Module({
   imports: [
@@ -19,12 +20,11 @@ import { UsersModule } from './modules/users/users.module';
       validationOptions: { abortEarly: false },
     }),
 
-    ThrottlerModule.forRoot([
-      { name: 'global', ttl: 60_000, limit: 100 },
-    ]),
+    ThrottlerModule.forRoot([{ name: 'global', ttl: 60_000, limit: 100 }]),
 
     AuthModule,
     UsersModule,
+    ReservationsModule,
   ],
 })
 export class AppModule {}
