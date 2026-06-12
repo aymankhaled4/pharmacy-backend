@@ -5,7 +5,7 @@ import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
 
 const PHARMACY_SELECT =
-  'id, pharmacy_name, phone, address, license_number, status, rejection_reason, verified_by, verified_at, created_at';
+  'id, pharmacy_name, phone, address, city, license_number, status, rejection_reason, verified_by, verified_at, created_at';
 
 interface CursorPayload {
   created_at: string;
@@ -168,11 +168,11 @@ export class AdminService {
       .from('reservations')
       .select(
         `
-        id, short_code, status, quantity, total_price, expires_at, confirmed_at, created_at,
+        id, short_code, status, quantity, price_at_reservation, discount_at_reservation, total_price, expires_at, confirmed_at, created_at,
         user_profiles ( id, full_name, phone ),
-        pharmacy_profiles ( id, pharmacy_name, address, phone ),
         inventory (
-          id, selling_price, discount_percent,
+          id, selling_price, discount_percent, pharmacy_id,
+          pharmacy_profiles ( id, pharmacy_name, address, phone, city ),
           drugs ( id, brand_name, brand_name_ar, active_ingredient )
         )
       `,
@@ -272,7 +272,7 @@ export class AdminService {
 
     const revenueRows = (revenueResult.data ?? []) as RevenueRow[];
     const totalRevenue = revenueRows.reduce(
-      (sum, row) => sum + (row.total_price ?? 0),
+      (sum, row) => sum + Number(row.total_price ?? 0),
       0,
     );
 

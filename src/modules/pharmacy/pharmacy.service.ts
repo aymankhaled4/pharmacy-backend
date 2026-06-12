@@ -9,7 +9,7 @@ import { RegisterPharmacyDto } from './dto/register-pharmacy.dto';
 import { UpdatePharmacyProfileDto } from './dto/update-pharmacy-profile.dto';
 
 const PHARMACY_SELECT =
-  'id, pharmacy_name, phone, address, license_number, status, rejection_reason, verified_by, verified_at, created_at';
+  'id, pharmacy_name, phone, address, city, license_number, status, rejection_reason, verified_by, verified_at, created_at';
 
 @Injectable()
 export class PharmacyService {
@@ -21,7 +21,6 @@ export class PharmacyService {
         email: dto.email,
         password: dto.password,
         email_confirm: true,
-        user_metadata: { role: 'pharmacy' },
       });
 
     if (authError) {
@@ -40,6 +39,7 @@ export class PharmacyService {
         pharmacy_name: dto.pharmacy_name,
         phone: dto.phone,
         address: dto.address,
+        city: dto.city,
         license_number: dto.license_number,
         status: 'pending',
         location: {

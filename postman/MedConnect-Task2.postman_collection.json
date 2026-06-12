@@ -1,116 +1,343 @@
 {
   "info": {
     "name": "MedConnect — Task 2 (Pharmacy + Admin)",
-    "description": "Pharmacy registration/profile and Admin endpoints for MedConnect backend.",
+    "description": "Registration, login/token helpers, and protected API endpoints for MedConnect.\n\n## Quick start\n1. Set `supabase_url` and `supabase_anon_key` in the environment.\n2. Run **Auth → Registration** for the role you need (User or Pharmacy).\n3. Tokens are saved automatically to `user_token`, `pharmacy_token`, or `admin_token`.\n4. Call protected endpoints — each uses the matching token variable.\n\nAdmin users must be created in Supabase Dashboard; use **Auth → Login → Login Admin** to obtain `admin_token`.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "base_url", "value": "http://localhost:3000/api/v1" },
     { "key": "supabase_url", "value": "https://your-project.supabase.co" },
     { "key": "supabase_anon_key", "value": "your-anon-key" },
+    { "key": "user_email", "value": "user@example.com" },
+    { "key": "user_password", "value": "SecurePass123!" },
+    { "key": "pharmacy_email", "value": "pharmacy@example.com" },
+    { "key": "pharmacy_password", "value": "SecurePass123!" },
+    { "key": "admin_email", "value": "admin@example.com" },
+    { "key": "admin_password", "value": "AdminPass123!" },
+    { "key": "access_token", "value": "", "description": "Last login token (any role)" },
+    { "key": "user_token", "value": "" },
     { "key": "pharmacy_token", "value": "" },
     { "key": "admin_token", "value": "" },
-    { "key": "pharmacy_id", "value": "" }
+    { "key": "user_id", "value": "" },
+    { "key": "pharmacy_id", "value": "" },
+    { "key": "inventory_id", "value": "" },
+    { "key": "reservation_id", "value": "" }
   ],
   "item": [
     {
-      "name": "Auth Helpers",
+      "name": "Auth",
+      "description": "Register accounts, obtain JWT tokens via Supabase Auth, and verify roles against the NestJS API.",
       "item": [
         {
-          "name": "Login Pharmacy (Supabase Auth)",
-          "event": [
+          "name": "Registration",
+          "item": [
             {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "  const body = pm.response.json();",
-                  "  pm.collectionVariables.set('pharmacy_token', body.access_token);",
-                  "  pm.environment.set('pharmacy_token', body.access_token);",
-                  "}"
+              "name": "Register User (Supabase)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "const saveToken = (token, userId) => {",
+                      "  if (token) {",
+                      "    pm.collectionVariables.set('user_token', token);",
+                      "    pm.environment.set('user_token', token);",
+                      "    pm.collectionVariables.set('access_token', token);",
+                      "    pm.environment.set('access_token', token);",
+                      "  }",
+                      "  if (userId) {",
+                      "    pm.collectionVariables.set('user_id', userId);",
+                      "    pm.environment.set('user_id', userId);",
+                      "  }",
+                      "};",
+                      "",
+                      "if (pm.response.code === 200) {",
+                      "  const body = pm.response.json();",
+                      "  saveToken(body.access_token, body.user?.id);",
+                      "",
+                      "  if (!body.access_token) {",
+                      "    const supabaseUrl = pm.collectionVariables.get('supabase_url') || pm.environment.get('supabase_url');",
+                      "    const anonKey = pm.collectionVariables.get('supabase_anon_key') || pm.environment.get('supabase_anon_key');",
+                      "    const email = pm.collectionVariables.get('user_email') || pm.environment.get('user_email');",
+                      "    const password = pm.collectionVariables.get('user_password') || pm.environment.get('user_password');",
+                      "    pm.sendRequest({",
+                      "      url: supabaseUrl + '/auth/v1/token?grant_type=password',",
+                      "      method: 'POST',",
+                      "      header: { apikey: anonKey, 'Content-Type': 'application/json' },",
+                      "      body: { mode: 'raw', raw: JSON.stringify({ email, password }) }",
+                      "    }, (err, res) => {",
+                      "      if (!err && res.code === 200) {",
+                      "        const login = res.json();",
+                      "        saveToken(login.access_token, body.user?.id);",
+                      "      }",
+                      "    });",
+                      "  }",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "apikey", "value": "{{supabase_anon_key}}" },
+                  { "key": "Content-Type", "value": "application/json" }
                 ],
-                "type": "text/javascript"
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\",\n  \"data\": {\n    \"role\": \"user\",\n    \"full_name\": \"Ahmed Mohamed\"\n  }\n}"
+                },
+                "url": "{{supabase_url}}/auth/v1/signup"
+              }
+            },
+            {
+              "name": "Register Pharmacy (API)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201 || pm.response.code === 200) {",
+                      "  const body = pm.response.json();",
+                      "  const id = body.data?.id;",
+                      "  if (id) {",
+                      "    pm.collectionVariables.set('pharmacy_id', id);",
+                      "    pm.environment.set('pharmacy_id', id);",
+                      "  }",
+                      "",
+                      "  const supabaseUrl = pm.collectionVariables.get('supabase_url') || pm.environment.get('supabase_url');",
+                      "  const anonKey = pm.collectionVariables.get('supabase_anon_key') || pm.environment.get('supabase_anon_key');",
+                      "  const email = pm.collectionVariables.get('pharmacy_email') || pm.environment.get('pharmacy_email');",
+                      "  const password = pm.collectionVariables.get('pharmacy_password') || pm.environment.get('pharmacy_password');",
+                      "  pm.sendRequest({",
+                      "    url: supabaseUrl + '/auth/v1/token?grant_type=password',",
+                      "    method: 'POST',",
+                      "    header: { apikey: anonKey, 'Content-Type': 'application/json' },",
+                      "    body: { mode: 'raw', raw: JSON.stringify({ email, password }) }",
+                      "  }, (err, res) => {",
+                      "    if (!err && res.code === 200) {",
+                      "      const login = res.json();",
+                      "      pm.collectionVariables.set('pharmacy_token', login.access_token);",
+                      "      pm.environment.set('pharmacy_token', login.access_token);",
+                      "      pm.collectionVariables.set('access_token', login.access_token);",
+                      "      pm.environment.set('access_token', login.access_token);",
+                      "    }",
+                      "  });",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{pharmacy_email}}\",\n  \"password\": \"{{pharmacy_password}}\",\n  \"pharmacy_name\": \"El Nour Pharmacy\",\n  \"phone\": \"+201012345678\",\n  \"address\": \"15 Tahrir Street, Downtown\",\n  \"city\": \"Cairo\",\n  \"license_number\": \"PH-LIC-2024-001\",\n  \"latitude\": 30.0444,\n  \"longitude\": 31.2357\n}"
+                },
+                "url": "{{base_url}}/pharmacy/register"
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "apikey", "value": "{{supabase_anon_key}}" },
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"pharmacy@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+          ]
+        },
+        {
+          "name": "Login",
+          "item": [
+            {
+              "name": "Login User (Supabase Auth)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "  const body = pm.response.json();",
+                      "  pm.collectionVariables.set('user_token', body.access_token);",
+                      "  pm.environment.set('user_token', body.access_token);",
+                      "  pm.collectionVariables.set('access_token', body.access_token);",
+                      "  pm.environment.set('access_token', body.access_token);",
+                      "  if (body.user?.id) {",
+                      "    pm.collectionVariables.set('user_id', body.user.id);",
+                      "    pm.environment.set('user_id', body.user.id);",
+                      "  }",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "apikey", "value": "{{supabase_anon_key}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+                },
+                "url": "{{supabase_url}}/auth/v1/token?grant_type=password"
+              }
             },
-            "url": "{{supabase_url}}/auth/v1/token?grant_type=password"
+            {
+              "name": "Login Pharmacy (Supabase Auth)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "  const body = pm.response.json();",
+                      "  pm.collectionVariables.set('pharmacy_token', body.access_token);",
+                      "  pm.environment.set('pharmacy_token', body.access_token);",
+                      "  pm.collectionVariables.set('access_token', body.access_token);",
+                      "  pm.environment.set('access_token', body.access_token);",
+                      "  if (body.user?.id) {",
+                      "    pm.collectionVariables.set('pharmacy_id', body.user.id);",
+                      "    pm.environment.set('pharmacy_id', body.user.id);",
+                      "  }",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "apikey", "value": "{{supabase_anon_key}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{pharmacy_email}}\",\n  \"password\": \"{{pharmacy_password}}\"\n}"
+                },
+                "url": "{{supabase_url}}/auth/v1/token?grant_type=password"
+              }
+            },
+            {
+              "name": "Login Admin (Supabase Auth)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "  const body = pm.response.json();",
+                      "  pm.collectionVariables.set('admin_token', body.access_token);",
+                      "  pm.environment.set('admin_token', body.access_token);",
+                      "  pm.collectionVariables.set('access_token', body.access_token);",
+                      "  pm.environment.set('access_token', body.access_token);",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "apikey", "value": "{{supabase_anon_key}}" },
+                  { "key": "Content-Type", "value": "application/json" }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}"
+                },
+                "url": "{{supabase_url}}/auth/v1/token?grant_type=password"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify Role",
+          "item": [
+            {
+              "name": "Get Role (User)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{user_token}}" }
+                ],
+                "url": "{{base_url}}/auth/role"
+              }
+            },
+            {
+              "name": "Get Role (Pharmacy)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{pharmacy_token}}" }
+                ],
+                "url": "{{base_url}}/auth/role"
+              }
+            },
+            {
+              "name": "Get Role (Admin)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                ],
+                "url": "{{base_url}}/auth/role"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "description": "Requires `user_token` — run Auth → Login → Login User first.",
+      "item": [
+        {
+          "name": "Get My Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{user_token}}" }
+            ],
+            "url": "{{base_url}}/users/me"
           }
         },
         {
-          "name": "Login Admin (Supabase Auth)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200) {",
-                  "  const body = pm.response.json();",
-                  "  pm.collectionVariables.set('admin_token', body.access_token);",
-                  "  pm.environment.set('admin_token', body.access_token);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
+          "name": "Update My Profile",
           "request": {
-            "method": "POST",
+            "method": "PATCH",
             "header": [
-              { "key": "apikey", "value": "{{supabase_anon_key}}" },
+              { "key": "Authorization", "value": "Bearer {{user_token}}" },
               { "key": "Content-Type", "value": "application/json" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"AdminPass123!\"\n}"
+              "raw": "{\n  \"full_name\": \"Ahmed Mohamed Updated\",\n  \"phone\": \"+201098765432\"\n}"
             },
-            "url": "{{supabase_url}}/auth/v1/token?grant_type=password"
+            "url": "{{base_url}}/users/me"
+          }
+        },
+        {
+          "name": "Register FCM Token",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{user_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fcm_token\": \"fME9v2-example-device-token\"\n}"
+            },
+            "url": "{{base_url}}/users/me/fcm-token"
           }
         }
       ]
     },
     {
       "name": "Pharmacy",
+      "description": "Requires `pharmacy_token` — run Auth → Registration or Login first.",
       "item": [
-        {
-          "name": "Register Pharmacy",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 201 || pm.response.code === 200) {",
-                  "  const body = pm.response.json();",
-                  "  const id = body.data?.id;",
-                  "  if (id) {",
-                  "    pm.collectionVariables.set('pharmacy_id', id);",
-                  "    pm.environment.set('pharmacy_id', id);",
-                  "  }",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"pharmacy@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"pharmacy_name\": \"El Nour Pharmacy\",\n  \"phone\": \"+201012345678\",\n  \"address\": \"15 Tahrir Street, Downtown, Cairo\",\n  \"license_number\": \"PH-LIC-2024-001\",\n  \"latitude\": 30.0444,\n  \"longitude\": 31.2357\n}"
-            },
-            "url": "{{base_url}}/pharmacy/register"
-          }
-        },
         {
           "name": "Get My Pharmacy Profile",
           "request": {
@@ -131,7 +358,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"pharmacy_name\": \"El Nour Pharmacy - Updated\",\n  \"phone\": \"+201098765432\",\n  \"address\": \"20 Ramses Street, Cairo\"\n}"
+              "raw": "{\n  \"pharmacy_name\": \"El Nour Pharmacy - Updated\",\n  \"phone\": \"+201098765432\",\n  \"address\": \"20 Ramses Street\",\n  \"city\": \"Cairo\"\n}"
             },
             "url": "{{base_url}}/pharmacy/me"
           }
@@ -140,6 +367,7 @@
     },
     {
       "name": "Admin",
+      "description": "Requires `admin_token` — create admin in Supabase Dashboard, then Auth → Login → Login Admin.",
       "item": [
         {
           "name": "List Pharmacies",
@@ -212,8 +440,7 @@
               "mode": "raw",
               "raw": "{\n  \"reason\": \"User requested account deletion\"\n}"
             },
-            "url": "{{base_url}}/admin/users/:user_id",
-            "variable": [{ "key": "user_id", "value": "00000000-0000-0000-0000-000000000000" }]
+            "url": "{{base_url}}/admin/users/{{user_id}}"
           }
         },
         {

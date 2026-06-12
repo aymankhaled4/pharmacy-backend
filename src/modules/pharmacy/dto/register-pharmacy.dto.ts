@@ -42,6 +42,12 @@ export class RegisterPharmacyDto {
   @MaxLength(500)
   address!: string;
 
+  @ApiProperty({ example: 'Cairo' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  city!: string;
+
   @ApiProperty({ example: 'PH-LIC-2024-001' })
   @IsString()
   @IsNotEmpty()

@@ -26,8 +26,9 @@ The table should have at least:
 | `id` | UUID PK | Matches `auth.users.id` |
 | `pharmacy_name` | TEXT | |
 | `phone` | TEXT | |
-| `address` | TEXT | |
-| `license_number` | TEXT UNIQUE | |
+| `address` | TEXT NOT NULL | |
+| `city` | TEXT NOT NULL | |
+| `license_number` | TEXT UNIQUE NOT NULL | |
 | `location` | GEOGRAPHY(POINT) | PostGIS |
 | `status` | TEXT | `pending`, `approved`, `rejected` |
 | `rejection_reason` | TEXT NULL | |
@@ -50,7 +51,7 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY mv_drug_purchase_analytics;
 ## Step 4 — Create an admin test user
 
 1. Create a user in Supabase Auth (Dashboard → Authentication → Users)
-2. Assign admin role so `get_my_role()` returns `'admin'` (via your role assignment table or `app_metadata`, depending on your Task 1 RPC implementation)
+2. Insert a row into `admin_profiles` with the same `id` and `full_name` so `get_my_role()` returns `'admin'`
 3. Note the admin email/password for Postman login
 
 ## Step 5 — Configure environment
