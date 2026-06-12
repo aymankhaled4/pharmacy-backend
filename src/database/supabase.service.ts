@@ -53,7 +53,9 @@ export class SupabaseService {
       case 'PGRST116':
         throw new NotFoundException('Record not found');
       default:
-        throw new InternalServerErrorException(`Database error: ${error.message}`);
+        throw new InternalServerErrorException(
+          `Database error: ${error.message}`,
+        );
     }
   }
 }

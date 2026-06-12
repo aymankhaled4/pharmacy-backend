@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { GetMyRoleResult } from '../../common/types/supabase-rpc.types';
 import { UserRole } from '../../common/types/auth-user.type';

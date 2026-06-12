@@ -1,0 +1,282 @@
+{
+  "info": {
+    "name": "MedConnect — Task 2 (Pharmacy + Admin)",
+    "description": "Pharmacy registration/profile and Admin endpoints for MedConnect backend.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000/api/v1" },
+    { "key": "supabase_url", "value": "https://your-project.supabase.co" },
+    { "key": "supabase_anon_key", "value": "your-anon-key" },
+    { "key": "pharmacy_token", "value": "" },
+    { "key": "admin_token", "value": "" },
+    { "key": "pharmacy_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth Helpers",
+      "item": [
+        {
+          "name": "Login Pharmacy (Supabase Auth)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('pharmacy_token', body.access_token);",
+                  "  pm.environment.set('pharmacy_token', body.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{supabase_anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"pharmacy@example.com\",\n  \"password\": \"SecurePass123!\"\n}"
+            },
+            "url": "{{supabase_url}}/auth/v1/token?grant_type=password"
+          }
+        },
+        {
+          "name": "Login Admin (Supabase Auth)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  pm.collectionVariables.set('admin_token', body.access_token);",
+                  "  pm.environment.set('admin_token', body.access_token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "apikey", "value": "{{supabase_anon_key}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"AdminPass123!\"\n}"
+            },
+            "url": "{{supabase_url}}/auth/v1/token?grant_type=password"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pharmacy",
+      "item": [
+        {
+          "name": "Register Pharmacy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "  const body = pm.response.json();",
+                  "  const id = body.data?.id;",
+                  "  if (id) {",
+                  "    pm.collectionVariables.set('pharmacy_id', id);",
+                  "    pm.environment.set('pharmacy_id', id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"pharmacy@example.com\",\n  \"password\": \"SecurePass123!\",\n  \"pharmacy_name\": \"El Nour Pharmacy\",\n  \"phone\": \"+201012345678\",\n  \"address\": \"15 Tahrir Street, Downtown, Cairo\",\n  \"license_number\": \"PH-LIC-2024-001\",\n  \"latitude\": 30.0444,\n  \"longitude\": 31.2357\n}"
+            },
+            "url": "{{base_url}}/pharmacy/register"
+          }
+        },
+        {
+          "name": "Get My Pharmacy Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{pharmacy_token}}" }
+            ],
+            "url": "{{base_url}}/pharmacy/me"
+          }
+        },
+        {
+          "name": "Update My Pharmacy Profile",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{pharmacy_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pharmacy_name\": \"El Nour Pharmacy - Updated\",\n  \"phone\": \"+201098765432\",\n  \"address\": \"20 Ramses Street, Cairo\"\n}"
+            },
+            "url": "{{base_url}}/pharmacy/me"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "List Pharmacies",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/pharmacies?status=pending",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "pharmacies"],
+              "query": [{ "key": "status", "value": "pending" }]
+            }
+          }
+        },
+        {
+          "name": "Approve Pharmacy",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": "{{base_url}}/admin/pharmacies/{{pharmacy_id}}/approve"
+          }
+        },
+        {
+          "name": "Reject Pharmacy",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rejection_reason\": \"License document is expired or invalid\"\n}"
+            },
+            "url": "{{base_url}}/admin/pharmacies/{{pharmacy_id}}/reject"
+          }
+        },
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/users?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users"],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "include_deleted", "value": "false", "disabled": true },
+                { "key": "cursor", "value": "", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Soft Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"User requested account deletion\"\n}"
+            },
+            "url": "{{base_url}}/admin/users/:user_id",
+            "variable": [{ "key": "user_id", "value": "00000000-0000-0000-0000-000000000000" }]
+          }
+        },
+        {
+          "name": "List All Reservations",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/reservations?limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "reservations"],
+              "query": [
+                { "key": "limit", "value": "20" },
+                { "key": "status", "value": "pending", "disabled": true },
+                { "key": "from_date", "value": "2026-01-01T00:00:00.000Z", "disabled": true },
+                { "key": "to_date", "value": "2026-12-31T23:59:59.999Z", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Analytics Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": "{{base_url}}/admin/analytics/overview"
+          }
+        },
+        {
+          "name": "Top Searched Drugs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/analytics/drugs/searched?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "analytics", "drugs", "searched"],
+              "query": [{ "key": "limit", "value": "10" }]
+            }
+          }
+        },
+        {
+          "name": "Top Purchased Drugs",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/analytics/drugs/purchased?limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "analytics", "drugs", "purchased"],
+              "query": [{ "key": "limit", "value": "10" }]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
