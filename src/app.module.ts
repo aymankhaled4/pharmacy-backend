@@ -16,6 +16,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { DrugsModule } from './modules/drugs/drugs.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 
     AuthModule,
     UsersModule,
+    SharedModule,
     PharmacyModule,
     AdminModule,
     ReservationsModule,

@@ -12,15 +12,15 @@ export class CacheService {
       url: process.env.REDIS_URL ?? 'redis://localhost:6379',
     });
 
-    this.client.on('error', (err) => {
-      this.logger.error('Redis error', err.message, 'CacheService');
+    this.client.on('error', () => {
+      // fail silently
     });
 
     this.client.connect().then(() => {
         this.isConnected = true;
         this.logger.log('Redis connected', 'CacheService');
-      }).catch((err) => {
-        this.logger.error('Redis connection failed', err.message, 'CacheService');
+      }).catch(() => {
+        this.logger.warn('Redis not available — cache disabled', 'CacheService');
       });
   }
 
@@ -39,7 +39,7 @@ export class CacheService {
     try {
       await this.client.set(key, JSON.stringify(value), { EX: ttlSeconds });
     } catch {
-      // fail silently — cache مش critical
+      // fail silently
     }
   }
 
