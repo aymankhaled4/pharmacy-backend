@@ -1,11 +1,11 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsDateString,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsString,
-  IsUUID,
   Max,
   Min,
   registerDecorator,
@@ -35,35 +35,39 @@ function IsFutureDate(validationOptions?: ValidationOptions) {
   };
 }
 
-export class AddInventoryItemDto {
-  @ApiProperty()
-  @IsUUID()
-  drug_id!: string;
-
+export class UpdateInventoryItemDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
   batch_number?: string;
 
-  @ApiProperty({ minimum: 0 })
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
   @IsInt()
   @Min(0)
-  quantity!: number;
+  quantity?: number;
 
-  @ApiProperty({ example: '2027-12-31' })
+  @ApiPropertyOptional({ example: '2027-12-31' })
+  @IsOptional()
   @IsDateString()
   @IsFutureDate()
-  expiry_date!: string;
+  expiry_date?: string;
 
-  @ApiProperty({ minimum: 0 })
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  selling_price!: number;
+  selling_price?: number;
 
-  @ApiPropertyOptional({ minimum: 0, maximum: 100, default: 0 })
+  @ApiPropertyOptional({ minimum: 0, maximum: 100 })
   @IsOptional()
   @IsNumber()
   @Min(0)
   @Max(100)
   discount_percent?: number;
+
+  @ApiPropertyOptional({ enum: ['active', 'inactive', 'out_of_stock'] })
+  @IsOptional()
+  @IsIn(['active', 'inactive', 'out_of_stock'])
+  status?: string;
 }
