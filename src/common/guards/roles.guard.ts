@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SupabaseService } from '../../database/supabase.service';
+import { CacheService } from '../../shared/cache/cache.service';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { GetMyRoleResult } from '../types/supabase-rpc.types';
 import { UserRole } from '../types/auth-user.type';
@@ -15,6 +16,7 @@ export class RolesGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private supabase: SupabaseService,
+    private cache: CacheService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -45,13 +47,19 @@ export class RolesGuard implements CanActivate {
   }
 
   private async resolveRole(userId: string, token: string): Promise<UserRole> {
+    const cached = await this.cache.get<UserRole>(this.cache.roleKey(userId));
+    if (cached) return cached;
+
     const { data, error } = await this.supabase
       .userClient(token)
       .rpc('get_my_role');
 
     if (error) return 'unknown';
 
-    return (data as GetMyRoleResult) ?? 'unknown';
+    const role = (data as GetMyRoleResult) ?? 'unknown';
+    await this.cache.set(this.cache.roleKey(userId), role, 60);
+
+    return role;
   }
 
   private async assertPharmacyApproved(pharmacyId: string): Promise<void> {
