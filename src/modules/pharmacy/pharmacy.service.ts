@@ -42,10 +42,7 @@ export class PharmacyService {
         city: dto.city,
         license_number: dto.license_number,
         status: 'pending',
-        location: {
-          type: 'Point',
-          coordinates: [dto.longitude, dto.latitude],
-        },
+        location: `SRID=4326;POINT(${dto.longitude} ${dto.latitude})`,
       })
       .select(PHARMACY_SELECT)
       .single();
