@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MedConnect — Task 2 (Pharmacy + Admin)",
-    "description": "Registration, login/token helpers, and protected API endpoints for MedConnect.\n\n## Quick start\n1. Set `supabase_url` and `supabase_anon_key` in the environment.\n2. Run **Auth → Registration** for the role you need (User or Pharmacy).\n3. Tokens are saved automatically to `user_token`, `pharmacy_token`, or `admin_token`.\n4. Call protected endpoints — each uses the matching token variable.\n\nAdmin users must be created in Supabase Dashboard; use **Auth → Login → Login Admin** to obtain `admin_token`.",
+    "description": "Login/token helpers and protected API endpoints for MedConnect.\n\n## Quick start\n1. Set `supabase_url` and `supabase_anon_key` in the environment.\n2. Run **Auth → Login** for the role you need (User, Pharmacy, or Admin).\n3. Tokens are saved automatically to `user_token`, `pharmacy_token`, or `admin_token`.\n4. Call protected endpoints — each uses the matching token variable.\n\nUser accounts must exist before login (`POST /auth/register` or Supabase Dashboard). Pharmacy registration: **Auth → Registration → Register Pharmacy**.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -26,71 +26,11 @@
   "item": [
     {
       "name": "Auth",
-      "description": "Register accounts, obtain JWT tokens via Supabase Auth, and verify roles against the NestJS API.",
+      "description": "Obtain JWT tokens via Supabase Auth login and verify roles against the NestJS API.",
       "item": [
         {
           "name": "Registration",
           "item": [
-            {
-              "name": "Register User (Supabase)",
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "exec": [
-                      "const saveToken = (token, userId) => {",
-                      "  if (token) {",
-                      "    pm.collectionVariables.set('user_token', token);",
-                      "    pm.environment.set('user_token', token);",
-                      "    pm.collectionVariables.set('access_token', token);",
-                      "    pm.environment.set('access_token', token);",
-                      "  }",
-                      "  if (userId) {",
-                      "    pm.collectionVariables.set('user_id', userId);",
-                      "    pm.environment.set('user_id', userId);",
-                      "  }",
-                      "};",
-                      "",
-                      "if (pm.response.code === 200) {",
-                      "  const body = pm.response.json();",
-                      "  saveToken(body.access_token, body.user?.id);",
-                      "",
-                      "  if (!body.access_token) {",
-                      "    const supabaseUrl = pm.collectionVariables.get('supabase_url') || pm.environment.get('supabase_url');",
-                      "    const anonKey = pm.collectionVariables.get('supabase_anon_key') || pm.environment.get('supabase_anon_key');",
-                      "    const email = pm.collectionVariables.get('user_email') || pm.environment.get('user_email');",
-                      "    const password = pm.collectionVariables.get('user_password') || pm.environment.get('user_password');",
-                      "    pm.sendRequest({",
-                      "      url: supabaseUrl + '/auth/v1/token?grant_type=password',",
-                      "      method: 'POST',",
-                      "      header: { apikey: anonKey, 'Content-Type': 'application/json' },",
-                      "      body: { mode: 'raw', raw: JSON.stringify({ email, password }) }",
-                      "    }, (err, res) => {",
-                      "      if (!err && res.code === 200) {",
-                      "        const login = res.json();",
-                      "        saveToken(login.access_token, body.user?.id);",
-                      "      }",
-                      "    });",
-                      "  }",
-                      "}"
-                    ],
-                    "type": "text/javascript"
-                  }
-                }
-              ],
-              "request": {
-                "method": "POST",
-                "header": [
-                  { "key": "apikey", "value": "{{supabase_anon_key}}" },
-                  { "key": "Content-Type", "value": "application/json" }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\",\n  \"data\": {\n    \"role\": \"user\",\n    \"full_name\": \"Ahmed Mohamed\"\n  }\n}"
-                },
-                "url": "{{supabase_url}}/auth/v1/signup"
-              }
-            },
             {
               "name": "Register Pharmacy (API)",
               "event": [

@@ -20,17 +20,17 @@ Update these variables in the environment:
 | `user_email` / `user_password` | Test user credentials |
 | `pharmacy_email` / `pharmacy_password` | Test pharmacy credentials |
 | `admin_email` / `admin_password` | Admin credentials (create in Supabase Dashboard) |
-| `user_token` | Auto-set by Register/Login User |
+| `user_token` | Auto-set by Login User |
 | `pharmacy_token` | Auto-set by Register/Login Pharmacy |
 | `admin_token` | Auto-set by Login Admin |
 | `access_token` | Last login token (any role) |
-| `user_id` | Auto-set on user register/login |
+| `user_id` | Auto-set on user login |
 | `pharmacy_id` | Auto-set on pharmacy register/login |
 
 ## Recommended test order
 
 ### User flow
-1. **Auth → Registration → Register User** — Supabase signup; auto-logs in and sets `user_token`
+1. **Auth → Login → Login User** — sets `user_token` (user must already exist via `POST /auth/register` or Supabase Dashboard)
 2. **Auth → Verify Role → Get Role (User)** — expect `{ role: "user" }`
 3. **Users → Get My Profile** — verify profile exists
 
@@ -46,10 +46,10 @@ Update these variables in the environment:
 
 ## Auth notes
 
-- **User registration** uses Supabase Auth (`/auth/v1/signup`) with `user_metadata.role = "user"`.
+- **User registration** is via the NestJS API (`POST /auth/register`) — not included in this collection; create the account first, then use **Login User**.
 - **Pharmacy registration** uses the NestJS API (`POST /pharmacy/register`), which creates the Supabase user and profile.
 - **Login** requests call Supabase Auth (`/auth/v1/token?grant_type=password`) and save tokens automatically.
-- Register requests also attempt auto-login so you can test protected endpoints immediately.
+- Pharmacy register also attempts auto-login so you can test protected endpoints immediately.
 - All protected API requests use `Authorization: Bearer {{role_token}}`.
 - Admin users must be created manually in Supabase Dashboard with role `'admin'`.
 
