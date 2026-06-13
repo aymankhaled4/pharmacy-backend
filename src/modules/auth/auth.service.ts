@@ -1,10 +1,8 @@
-import {
-  Injectable,
-  ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, ForbiddenException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { GetMyRoleResult } from '../../common/types/supabase-rpc.types';
 import { UserRole } from '../../common/types/auth-user.type';
+import { RegisterDto } from './dto/register.dto';
 
 export interface RoleResponse {
   role: UserRole;
@@ -15,6 +13,35 @@ export interface RoleResponse {
 @Injectable()
 export class AuthService {
   constructor(private supabase: SupabaseService) {}
+
+  async register(dto: RegisterDto) {
+    const { data, error } = await this.supabase.adminClient.auth.admin.createUser({
+        email: dto.email,
+        password: dto.password,
+        email_confirm: true,
+      });
+
+    if (error) {
+      if (error.message.includes('already registered')) {
+        throw new ConflictException('Email already registered');
+      }
+      throw new InternalServerErrorException(error.message);
+    }
+
+    await this.supabase.adminClient
+      .from('user_profiles')
+      .update({
+        full_name: dto.full_name ?? null,
+        phone: dto.phone ?? null,
+      })
+      .eq('id', data.user.id);
+
+    return {
+      id: data.user.id,
+      email: data.user.email,
+      full_name: dto.full_name ?? null,
+    };
+  }
 
   async getRole(userId: string, token: string): Promise<RoleResponse> {
     const { data, error } = await this.supabase

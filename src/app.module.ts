@@ -9,6 +9,8 @@ import { openaiConfig } from './config/openai.config';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { PharmacyModule } from './modules/pharmacy/pharmacy.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
@@ -30,6 +32,9 @@ import { SharedModule } from './shared/shared.module';
 
     AuthModule,
     UsersModule,
+    SharedModule,
+    PharmacyModule,
+    AdminModule,
     ReservationsModule,
     NotificationsModule,
     WebhooksModule,
