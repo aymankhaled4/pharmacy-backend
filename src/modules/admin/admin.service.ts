@@ -29,6 +29,39 @@ interface RevenueRow {
   total_price: number | null;
 }
 
+interface SearchLogRow {
+  resolved_ingredient: string;
+  user_id: string | null;
+}
+
+interface ReservationPurchaseRow {
+  id: string;
+  quantity: number;
+  inventory: {
+    drugs: {
+      id: string;
+      brand_name: string;
+      brand_name_ar: string | null;
+      active_ingredient: string;
+    } | null;
+  } | null;
+}
+
+interface TopSearchedDrugRow {
+  resolved_ingredient: string;
+  search_count: number;
+  unique_searchers: number;
+}
+
+interface TopPurchasedDrugRow {
+  drug_id: string;
+  brand_name: string;
+  brand_name_ar: string | null;
+  active_ingredient: string;
+  total_purchased: number;
+  total_orders: number;
+}
+
 @Injectable()
 export class AdminService {
   constructor(private supabase: SupabaseService) {}
@@ -307,21 +340,25 @@ export class AdminService {
   }
 
   async getTopSearchedDrugs(limit = 10) {
-    const { data, error } = await this.supabase.adminClient
+    const mvResult = await this.supabase.adminClient
       .from('mv_drug_search_analytics')
       .select('resolved_ingredient, search_count, unique_searchers')
       .order('search_count', { ascending: false })
       .limit(limit);
 
-    if (error) {
-      this.supabase.throwFromPostgresError(error);
+    if (!mvResult.error) {
+      return mvResult.data ?? [];
     }
 
-    return data ?? [];
+    if (!this.isMissingAnalyticsRelation(mvResult.error)) {
+      this.supabase.throwFromPostgresError(mvResult.error);
+    }
+
+    return this.queryTopSearchedDrugsLive(limit);
   }
 
   async getTopPurchasedDrugs(limit = 10) {
-    const { data, error } = await this.supabase.adminClient
+    const mvResult = await this.supabase.adminClient
       .from('mv_drug_purchase_analytics')
       .select(
         'drug_id, brand_name, brand_name_ar, active_ingredient, total_purchased, total_orders',
@@ -329,11 +366,114 @@ export class AdminService {
       .order('total_purchased', { ascending: false })
       .limit(limit);
 
+    if (!mvResult.error) {
+      return mvResult.data ?? [];
+    }
+
+    if (!this.isMissingAnalyticsRelation(mvResult.error)) {
+      this.supabase.throwFromPostgresError(mvResult.error);
+    }
+
+    return this.queryTopPurchasedDrugsLive(limit);
+  }
+
+  private async queryTopSearchedDrugsLive(
+    limit: number,
+  ): Promise<TopSearchedDrugRow[]> {
+    const { data, error } = await this.supabase.adminClient
+      .from('search_logs')
+      .select('resolved_ingredient, user_id')
+      .not('resolved_ingredient', 'is', null);
+
     if (error) {
       this.supabase.throwFromPostgresError(error);
     }
 
-    return data ?? [];
+    const counts = new Map<
+      string,
+      { search_count: number; unique_searchers: Set<string> }
+    >();
+
+    for (const row of (data ?? []) as SearchLogRow[]) {
+      const ingredient = row.resolved_ingredient;
+      const entry = counts.get(ingredient) ?? {
+        search_count: 0,
+        unique_searchers: new Set<string>(),
+      };
+      entry.search_count += 1;
+      if (row.user_id) {
+        entry.unique_searchers.add(row.user_id);
+      }
+      counts.set(ingredient, entry);
+    }
+
+    return Array.from(counts.entries())
+      .map(([resolved_ingredient, stats]) => ({
+        resolved_ingredient,
+        search_count: stats.search_count,
+        unique_searchers: stats.unique_searchers.size,
+      }))
+      .sort((a, b) => b.search_count - a.search_count)
+      .slice(0, limit);
+  }
+
+  private async queryTopPurchasedDrugsLive(
+    limit: number,
+  ): Promise<TopPurchasedDrugRow[]> {
+    const { data, error } = await this.supabase.adminClient
+      .from('reservations')
+      .select(
+        `
+        id,
+        quantity,
+        inventory (
+          drugs ( id, brand_name, brand_name_ar, active_ingredient )
+        )
+      `,
+      )
+      .eq('status', 'confirmed');
+
+    if (error) {
+      this.supabase.throwFromPostgresError(error);
+    }
+
+    const totals = new Map<string, TopPurchasedDrugRow>();
+
+    for (const row of (data ?? []) as unknown as ReservationPurchaseRow[]) {
+      const drug = row.inventory?.drugs;
+      if (!drug) continue;
+
+      const existing = totals.get(drug.id);
+      if (existing) {
+        existing.total_purchased += row.quantity;
+        existing.total_orders += 1;
+        continue;
+      }
+
+      totals.set(drug.id, {
+        drug_id: drug.id,
+        brand_name: drug.brand_name,
+        brand_name_ar: drug.brand_name_ar,
+        active_ingredient: drug.active_ingredient,
+        total_purchased: row.quantity,
+        total_orders: 1,
+      });
+    }
+
+    return Array.from(totals.values())
+      .sort((a, b) => b.total_purchased - a.total_purchased)
+      .slice(0, limit);
+  }
+
+  private isMissingAnalyticsRelation(error: {
+    code?: string;
+    message: string;
+  }): boolean {
+    return (
+      error.code === 'PGRST205' ||
+      error.message.includes('Could not find the table') ||
+      error.message.includes('schema cache')
+    );
   }
 
   private encodeCursor(payload: CursorPayload): string {
