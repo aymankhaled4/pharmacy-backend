@@ -14,6 +14,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { DrugsModule } from './modules/drugs/drugs.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { AiModule } from './modules/ai/ai.module';
+import { SharedModule } from './shared/shared.module';
 
 @Module({
   imports: [
@@ -33,6 +35,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
     WebhooksModule,
     DrugsModule,
     InventoryModule,
+    AiModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }
