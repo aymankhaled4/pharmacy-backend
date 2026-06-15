@@ -70,7 +70,7 @@ export class ChatExecutor {
 
         const { data, error } = await this.supabase.adminClient.rpc(
             'search_nearby_pharmacies',
-            { drug_id, lat, lng, radius_km },
+            { p_drug_id: drug_id, p_latitude: lat, p_longitude: lng, p_radius_km: radius_km },
         );
 
         if (error) throw new Error(error.message);

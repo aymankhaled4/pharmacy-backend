@@ -13,10 +13,10 @@ async function bootstrap() {
   const logger = new LoggerService();
 
   app.enableCors({
-    origin: (process.env.CORS_ORIGINS ?? '').split(',').map((o) => o.trim()),
+    origin: '*',
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-webhook-secret'],
-    credentials: true,
+    credentials: false,
   });
 
   app.setGlobalPrefix('api/v1');
