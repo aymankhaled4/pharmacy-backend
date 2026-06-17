@@ -9,7 +9,7 @@ import { SupabaseService } from '../../database/supabase.service';
 export class DrugsService {
   constructor(private readonly supabase: SupabaseService) {}
 
-  async search(query: string) {
+  async search(query: string, latitude?: string, longitude?: string, radius?: string) {
     const normalizedQuery = query?.trim();
 
     if (!normalizedQuery) {
@@ -24,7 +24,66 @@ export class DrugsService {
       this.supabase.throwFromPostgresError(error);
     }
 
-    return data ?? [];
+    const drugs = data ?? [];
+    const hasLocation = latitude !== undefined || longitude !== undefined;
+
+    if (hasLocation) {
+      if (latitude === undefined || longitude === undefined) {
+        throw new BadRequestException('Both latitude and longitude are required');
+      }
+
+      const results = await Promise.all(
+        drugs.map(async (drug: Record<string, any>) => {
+          const drugId = drug.id ?? drug.drug_id;
+          if (typeof drugId !== 'string' || drugId.length === 0) {
+            return null;
+          }
+
+          const pharmacies = await this.findNearby(drugId, latitude, longitude, radius);
+          if (pharmacies.length === 0) {
+            return null;
+          }
+
+          return {
+            ...drug,
+            pharmacies,
+          };
+        }),
+      );
+
+      return results.filter((drug): drug is Record<string, any> => drug !== null);
+    }
+
+    const drugIds = drugs
+      .map((drug: Record<string, any>) => drug.id ?? drug.drug_id)
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
+
+    if (drugIds.length === 0) {
+      return [];
+    }
+
+    const { data: inventoryData, error: inventoryError } =
+      await this.supabase.adminClient
+        .from('inventory')
+        .select('drug_id, pharmacy:pharmacy_id!inner(status)')
+        .in('drug_id', drugIds)
+        .eq('status', 'active')
+        .gt('quantity', 0)
+        .eq('pharmacy.status', 'approved');
+
+    if (inventoryError) {
+      this.supabase.throwFromPostgresError(inventoryError);
+    }
+
+    const availableDrugIds = new Set(
+      (inventoryData ?? [])
+        .map((item: Record<string, any>) => item.drug_id)
+        .filter((id: unknown): id is string => typeof id === 'string'),
+    );
+
+    return drugs.filter((drug: Record<string, any>) =>
+      availableDrugIds.has(drug.id ?? drug.drug_id),
+    );
   }
 
   async getTrending(limit?: string) {
