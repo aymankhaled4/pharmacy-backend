@@ -10,8 +10,16 @@ export class DrugsController {
   @Get('search')
   @ApiOperation({ summary: 'Search drugs by brand, generic, or active ingredient' })
   @ApiQuery({ name: 'q', required: true })
-  search(@Query('q') query: string) {
-    return this.drugsService.search(query);
+  @ApiQuery({ name: 'lat', required: false, type: Number })
+  @ApiQuery({ name: 'lng', required: false, type: Number })
+  @ApiQuery({ name: 'radius', required: false, type: Number })
+  search(
+    @Query('q') query: string,
+    @Query('lat') latitude?: string,
+    @Query('lng') longitude?: string,
+    @Query('radius') radius?: string,
+  ) {
+    return this.drugsService.search(query, latitude, longitude, radius);
   }
 
   @Get('trending')
