@@ -21,6 +21,7 @@ import { SoftDeleteUserDto } from './dto/soft-delete-user.dto';
 import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
+import { ActivityQueryDto } from './dto/activity-query.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -88,6 +89,12 @@ export class AdminController {
   @ApiOperation({ summary: 'System KPIs overview' })
   getAnalyticsOverview() {
     return this.adminService.getAnalyticsOverview();
+  }
+
+  @Get('activity-feed')
+  @ApiOperation({ summary: 'Recent admin activity feed' })
+  getActivityFeed(@Query() query: ActivityQueryDto) {
+    return this.adminService.getActivityFeed(query);
   }
 
   @Get('analytics/drugs/searched')

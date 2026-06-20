@@ -3,6 +3,7 @@ import { SupabaseService } from '../../database/supabase.service';
 import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
+import { ActivityQueryDto } from './dto/activity-query.dto';
 
 const PHARMACY_SELECT =
   'id, pharmacy_name, phone, address, city, license_number, status, rejection_reason, verified_by, verified_at, created_at';
@@ -60,6 +61,61 @@ interface TopPurchasedDrugRow {
   active_ingredient: string;
   total_purchased: number;
   total_orders: number;
+}
+
+type ActivitySeverity = 'info' | 'success' | 'warning' | 'danger';
+
+export interface ActivityFeedItem {
+  id: string;
+  type:
+    | 'pharmacy_application'
+    | 'pharmacy_approved'
+    | 'pharmacy_rejected'
+    | 'low_inventory'
+    | 'reservation_created'
+    | 'reservation_completed'
+    | 'reservation_cancelled';
+  severity: ActivitySeverity;
+  title: string;
+  message: string;
+  createdAt: string;
+  entity: {
+    type: 'pharmacy' | 'inventory' | 'reservation';
+    id: string;
+  };
+}
+
+interface ActivityPharmacyRow {
+  id: string;
+  pharmacy_name: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  verified_at: string | null;
+}
+
+interface ActivityInventoryRow {
+  id: string;
+  quantity: number;
+  updated_at: string | null;
+  created_at: string;
+  drug:
+    | {
+        brand_name: string | null;
+        active_ingredient: string | null;
+      }
+    | null;
+}
+
+interface ActivityReservationRow {
+  id: string;
+  status: 'pending' | 'confirmed' | 'cancelled' | 'expired';
+  created_at: string;
+  confirmed_at: string | null;
+  user:
+    | {
+        full_name: string | null;
+      }
+    | null;
 }
 
 @Injectable()
@@ -339,6 +395,88 @@ export class AdminService {
     };
   }
 
+  async getActivityFeed(query: ActivityQueryDto) {
+    const limit = query.limit ?? 10;
+    const fetchLimit = Math.max(limit * 2, 10);
+
+    const [pharmaciesResult, inventoryResult, reservationsResult] =
+      await Promise.all([
+        this.supabase.adminClient
+          .from('pharmacy_profiles')
+          .select('id, pharmacy_name, status, created_at, verified_at')
+          .in('status', ['pending', 'approved', 'rejected'])
+          .order('created_at', { ascending: false })
+          .limit(fetchLimit),
+        this.supabase.adminClient
+          .from('inventory')
+          .select(
+            `
+            id,
+            quantity,
+            updated_at,
+            created_at,
+            drug:drug_id (
+              brand_name,
+              active_ingredient
+            )
+          `,
+          )
+          .eq('status', 'active')
+          .lte('quantity', 5)
+          .order('updated_at', { ascending: false })
+          .limit(fetchLimit),
+        this.supabase.adminClient
+          .from('reservations')
+          .select(
+            `
+            id,
+            status,
+            created_at,
+            confirmed_at,
+            user:user_id (
+              full_name
+            )
+          `,
+          )
+          .in('status', ['pending', 'confirmed', 'cancelled'])
+          .order('created_at', { ascending: false })
+          .limit(fetchLimit),
+      ]);
+
+    if (pharmaciesResult.error) {
+      this.supabase.throwFromPostgresError(pharmaciesResult.error);
+    }
+
+    if (inventoryResult.error) {
+      this.supabase.throwFromPostgresError(inventoryResult.error);
+    }
+
+    if (reservationsResult.error) {
+      this.supabase.throwFromPostgresError(reservationsResult.error);
+    }
+
+    const items: ActivityFeedItem[] = [
+      ...((pharmaciesResult.data ?? []) as ActivityPharmacyRow[]).map((row) =>
+        this.mapPharmacyActivity(row),
+      ),
+      ...((inventoryResult.data ?? []) as unknown as ActivityInventoryRow[]).map(
+        (row) => this.mapInventoryActivity(row),
+      ),
+      ...((reservationsResult.data ?? []) as unknown as ActivityReservationRow[])
+        .map((row) => this.mapReservationActivity(row))
+        .filter((item): item is ActivityFeedItem => item !== null),
+    ];
+
+    return {
+      items: items
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+        .slice(0, limit),
+    };
+  }
+
   async getTopSearchedDrugs(limit = 10) {
     const mvResult = await this.supabase.adminClient
       .from('mv_drug_search_analytics')
@@ -474,6 +612,103 @@ export class AdminService {
       error.message.includes('Could not find the table') ||
       error.message.includes('schema cache')
     );
+  }
+
+  private mapPharmacyActivity(row: ActivityPharmacyRow): ActivityFeedItem {
+    const pharmacyName = row.pharmacy_name ?? 'Pharmacy';
+
+    if (row.status === 'approved') {
+      return {
+        id: row.id,
+        type: 'pharmacy_approved',
+        severity: 'success',
+        title: 'Admin',
+        message: `Approved ${pharmacyName} listing`,
+        createdAt: row.verified_at ?? row.created_at,
+        entity: { type: 'pharmacy', id: row.id },
+      };
+    }
+
+    if (row.status === 'rejected') {
+      return {
+        id: row.id,
+        type: 'pharmacy_rejected',
+        severity: 'danger',
+        title: 'Admin',
+        message: `Rejected ${pharmacyName} listing`,
+        createdAt: row.verified_at ?? row.created_at,
+        entity: { type: 'pharmacy', id: row.id },
+      };
+    }
+
+    return {
+      id: row.id,
+      type: 'pharmacy_application',
+      severity: 'info',
+      title: pharmacyName,
+      message: 'applied for partnership',
+      createdAt: row.created_at,
+      entity: { type: 'pharmacy', id: row.id },
+    };
+  }
+
+  private mapInventoryActivity(row: ActivityInventoryRow): ActivityFeedItem {
+    const drugName =
+      row.drug?.brand_name ?? row.drug?.active_ingredient ?? 'a medicine';
+
+    return {
+      id: row.id,
+      type: 'low_inventory',
+      severity: 'warning',
+      title: 'System',
+      message: `Low inventory alert for ${drugName}`,
+      createdAt: row.updated_at ?? row.created_at,
+      entity: { type: 'inventory', id: row.id },
+    };
+  }
+
+  private mapReservationActivity(
+    row: ActivityReservationRow,
+  ): ActivityFeedItem | null {
+    const userName = row.user?.full_name ?? 'A user';
+
+    if (row.status === 'confirmed') {
+      return {
+        id: row.id,
+        type: 'reservation_completed',
+        severity: 'info',
+        title: userName,
+        message: 'completed a reservation',
+        createdAt: row.confirmed_at ?? row.created_at,
+        entity: { type: 'reservation', id: row.id },
+      };
+    }
+
+    if (row.status === 'cancelled') {
+      return {
+        id: row.id,
+        type: 'reservation_cancelled',
+        severity: 'danger',
+        title: userName,
+        message: 'cancelled a reservation',
+        createdAt: row.created_at,
+        entity: { type: 'reservation', id: row.id },
+      };
+    }
+
+    if (row.status === 'pending') {
+      return {
+        id: row.id,
+        type: 'reservation_created',
+        severity: 'info',
+        title: userName,
+        message: 'created a reservation',
+        createdAt: row.created_at,
+        entity: { type: 'reservation', id: row.id },
+      };
+    }
+
+    return null;
   }
 
   private encodeCursor(payload: CursorPayload): string {
