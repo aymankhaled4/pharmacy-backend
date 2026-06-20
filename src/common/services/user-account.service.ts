@@ -20,17 +20,27 @@ export class UserAccountService {
   }
 
   async getStatus(userId: string): Promise<UserAccountStatus | null> {
-    const { data } = await this.supabase.adminClient
+    const { data: user } = await this.supabase.adminClient
       .from('user_profiles')
       .select('status, deleted_at')
       .eq('id', userId)
       .maybeSingle();
 
-    if (!data) {
-      return null;
+    if (user) {
+      return this.resolveStatus(user as UserProfileStatusRow);
     }
 
-    return this.resolveStatus(data as UserProfileStatusRow);
+    const { data: admin } = await this.supabase.adminClient
+      .from('admin_profiles')
+      .select('status, deleted_at')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (admin) {
+      return this.resolveStatus(admin as UserProfileStatusRow);
+    }
+
+    return null;
   }
 
   async assertCanAccess(userId: string): Promise<void> {
