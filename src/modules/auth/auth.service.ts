@@ -1,18 +1,24 @@
 import { Injectable, ForbiddenException, ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
+import { UserAccountService } from '../../common/services/user-account.service';
 import { GetMyRoleResult } from '../../common/types/supabase-rpc.types';
 import { UserRole } from '../../common/types/auth-user.type';
+import { UserAccountStatus } from '../../common/types/user-account-status.type';
 import { RegisterDto } from './dto/register.dto';
 
 export interface RoleResponse {
   role: UserRole;
+  accountStatus?: UserAccountStatus;
   pharmacyStatus?: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string | null;
 }
 
 @Injectable()
 export class AuthService {
-  constructor(private supabase: SupabaseService) {}
+  constructor(
+    private supabase: SupabaseService,
+    private userAccount: UserAccountService,
+  ) {}
 
   async register(dto: RegisterDto) {
     const { data, error } = await this.supabase.adminClient.auth.admin.createUser({
@@ -28,22 +34,31 @@ export class AuthService {
       throw new InternalServerErrorException(error.message);
     }
 
-    await this.supabase.adminClient
+    const { error: profileError } = await this.supabase.adminClient
       .from('user_profiles')
-      .update({
-        full_name: dto.full_name ?? null,
+      .insert({
+        id: data.user.id,
+        full_name: dto.full_name ?? 'User',
         phone: dto.phone ?? null,
-      })
-      .eq('id', data.user.id);
+        status: 'active',
+      });
+
+    if (profileError) {
+      await this.supabase.adminClient.auth.admin.deleteUser(data.user.id);
+      this.supabase.throwFromPostgresError(profileError);
+    }
 
     return {
       id: data.user.id,
       email: data.user.email,
       full_name: dto.full_name ?? null,
+      status: 'active' as const,
     };
   }
 
   async getRole(userId: string, token: string): Promise<RoleResponse> {
+    await this.userAccount.assertCanAccess(userId);
+
     const { data, error } = await this.supabase
       .userClient(token)
       .rpc('get_my_role');
@@ -53,6 +68,11 @@ export class AuthService {
     }
 
     const role = (data as GetMyRoleResult) ?? 'unknown';
+
+    if (role === 'user') {
+      const accountStatus = await this.userAccount.getStatus(userId);
+      return { role, accountStatus: accountStatus ?? 'active' };
+    }
 
     if (role === 'pharmacy') {
       const { data: pharmacy } = await this.supabase.adminClient

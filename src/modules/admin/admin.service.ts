@@ -1,5 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
+import { CacheService } from '../../shared/cache/cache.service';
+import { UserAccountService } from '../../common/services/user-account.service';
+import { UserAccountStatus } from '../../common/types/user-account-status.type';
 import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
@@ -18,6 +21,12 @@ export interface UserProfileRow {
   phone: string | null;
   created_at: string;
   deleted_at: string | null;
+  status: UserAccountStatus;
+}
+
+export interface AdminUserListItem extends UserProfileRow {
+  email: string | null;
+  last_login: string | null;
 }
 
 export interface ReservationListRow {
@@ -64,7 +73,11 @@ interface TopPurchasedDrugRow {
 
 @Injectable()
 export class AdminService {
-  constructor(private supabase: SupabaseService) {}
+  constructor(
+    private supabase: SupabaseService,
+    private cache: CacheService,
+    private userAccount: UserAccountService,
+  ) {}
 
   async listPharmacies(query: ListPharmaciesQueryDto) {
     let dbQuery = this.supabase.adminClient
@@ -138,13 +151,15 @@ export class AdminService {
 
     let dbQuery = this.supabase.adminClient
       .from('user_profiles')
-      .select('id, full_name, phone, created_at, deleted_at')
+      .select('id, full_name, phone, created_at, deleted_at, status')
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(limit + 1);
 
-    if (!query.include_deleted) {
-      dbQuery = dbQuery.is('deleted_at', null);
+    if (query.status) {
+      dbQuery = dbQuery.eq('status', query.status);
+    } else if (!query.include_deleted) {
+      dbQuery = dbQuery.neq('status', 'deleted');
     }
 
     if (query.cursor) {
@@ -164,9 +179,10 @@ export class AdminService {
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
     const last = page[page.length - 1];
+    const enrichedPage = await this.enrichUsersWithAuth(page);
 
     return {
-      items: page,
+      items: enrichedPage,
       nextCursor:
         hasMore && last
           ? this.encodeCursor({ created_at: last.created_at, id: last.id })
@@ -174,13 +190,35 @@ export class AdminService {
     };
   }
 
+  private async enrichUsersWithAuth(
+    profiles: UserProfileRow[],
+  ): Promise<AdminUserListItem[]> {
+    return Promise.all(
+      profiles.map(async (profile) => {
+        const { data } = await this.supabase.adminClient.auth.admin.getUserById(
+          profile.id,
+        );
+
+        return {
+          ...profile,
+          status: this.userAccount.resolveStatus(profile),
+          email: data.user?.email ?? null,
+          last_login: data.user?.last_sign_in_at ?? null,
+        };
+      }),
+    );
+  }
+
   async softDeleteUser(id: string) {
     const { data, error } = await this.supabase.adminClient
       .from('user_profiles')
-      .update({ deleted_at: new Date().toISOString() })
+      .update({
+        deleted_at: new Date().toISOString(),
+        status: 'deleted',
+      })
       .eq('id', id)
-      .is('deleted_at', null)
-      .select('id, full_name, phone, deleted_at')
+      .neq('status', 'deleted')
+      .select('id, full_name, phone, deleted_at, status')
       .single();
 
     if (error) {
@@ -190,6 +228,103 @@ export class AdminService {
     if (!data) {
       throw new NotFoundException('User not found or already deleted');
     }
+
+    await this.cache.delete(this.cache.roleKey(id));
+
+    return { success: true, user: data };
+  }
+
+  async activateUser(id: string) {
+    return this.unblockUser(id);
+  }
+
+  async deactivateUser(id: string) {
+    return this.blockUser(id);
+  }
+
+  async bulkActivateUsers(userIds: string[]) {
+    return this.bulkUpdateUserStatus(userIds, 'blocked', 'active');
+  }
+
+  async bulkDeactivateUsers(userIds: string[]) {
+    return this.bulkUpdateUserStatus(userIds, 'active', 'blocked');
+  }
+
+  private async bulkUpdateUserStatus(
+    userIds: string[],
+    fromStatus: UserAccountStatus,
+    toStatus: UserAccountStatus,
+  ) {
+    const uniqueIds = [...new Set(userIds)];
+
+    const { data, error } = await this.supabase.adminClient
+      .from('user_profiles')
+      .update({ status: toStatus })
+      .in('id', uniqueIds)
+      .eq('status', fromStatus)
+      .select('id, full_name, phone, deleted_at, status');
+
+    if (error) {
+      this.supabase.throwFromPostgresError(error);
+    }
+
+    const users = data ?? [];
+    const updatedIds = new Set(users.map((user) => user.id));
+
+    await Promise.all(
+      users.map((user) => this.cache.delete(this.cache.roleKey(user.id))),
+    );
+
+    return {
+      success: true,
+      updated_count: users.length,
+      failed_ids: uniqueIds.filter((id) => !updatedIds.has(id)),
+      users,
+    };
+  }
+
+  async blockUser(id: string) {
+    const { data, error } = await this.supabase.adminClient
+      .from('user_profiles')
+      .update({ status: 'blocked' })
+      .eq('id', id)
+      .eq('status', 'active')
+      .select('id, full_name, phone, deleted_at, status')
+      .single();
+
+    if (error) {
+      this.supabase.throwFromPostgresError(error);
+    }
+
+    if (!data) {
+      throw new BadRequestException(
+        'User not found, already blocked, or deleted',
+      );
+    }
+
+    await this.cache.delete(this.cache.roleKey(id));
+
+    return { success: true, user: data };
+  }
+
+  async unblockUser(id: string) {
+    const { data, error } = await this.supabase.adminClient
+      .from('user_profiles')
+      .update({ status: 'active' })
+      .eq('id', id)
+      .eq('status', 'blocked')
+      .select('id, full_name, phone, deleted_at, status')
+      .single();
+
+    if (error) {
+      this.supabase.throwFromPostgresError(error);
+    }
+
+    if (!data) {
+      throw new NotFoundException('User not found or not blocked');
+    }
+
+    await this.cache.delete(this.cache.roleKey(id));
 
     return { success: true, user: data };
   }
