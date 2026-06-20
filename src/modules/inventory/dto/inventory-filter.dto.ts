@@ -79,4 +79,9 @@ export class InventoryFilterDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  @ApiPropertyOptional({ description: 'Cursor for pagination (base64-encoded { created_at, id })' })
+  @IsOptional()
+  @IsString()
+  cursor?: string;
 }

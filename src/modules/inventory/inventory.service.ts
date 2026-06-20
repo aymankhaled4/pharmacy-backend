@@ -35,7 +35,7 @@ const INVENTORY_SELECT = `
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly supabase: SupabaseService) { }
 
   async list(pharmacyId: string, filters: InventoryFilterDto) {
     const limit = filters.limit ?? 20;
@@ -45,7 +45,8 @@ export class InventoryService {
       .select(INVENTORY_SELECT)
       .eq('pharmacy_id', pharmacyId)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .order('id', { ascending: false })
+      .limit(limit + 1);
 
     if (filters.id) {
       query = query.eq('id', filters.id);
@@ -86,27 +87,47 @@ export class InventoryService {
         .lte('expiry_date', this.getDateDaysFromNow(30));
     }
 
+    if (filters.cursor) {
+      const cursor = this.decodeCursor(filters.cursor);
+      query = query.or(
+        `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`,
+      );
+    }
+
     const { data, error } = await query;
 
     if (error) {
       this.supabase.throwFromPostgresError(error);
     }
 
-    if (!filters.search?.trim()) {
-      return data ?? [];
+    let items = data ?? [];
+
+    // apply in-memory search filter
+    if (filters.search?.trim()) {
+      const search = filters.search.trim().toLowerCase();
+      items = items.filter((item) => {
+        const drug = item.drug as unknown as Record<string, string | null> | null;
+        return [
+          item.batch_number,
+          drug?.brand_name,
+          drug?.brand_name_ar,
+          drug?.generic_name,
+          drug?.active_ingredient,
+        ].some((value) => value?.toLowerCase().includes(search));
+      });
     }
 
-    const search = filters.search.trim().toLowerCase();
-    return (data ?? []).filter((item) => {
-      const drug = item.drug as unknown as Record<string, string | null> | null;
-      return [
-        item.batch_number,
-        drug?.brand_name,
-        drug?.brand_name_ar,
-        drug?.generic_name,
-        drug?.active_ingredient,
-      ].some((value) => value?.toLowerCase().includes(search));
-    });
+    const hasMore = items.length > limit;
+    const page = hasMore ? items.slice(0, limit) : items;
+    const last = page[page.length - 1];
+
+    return {
+      items: page,
+      nextCursor:
+        hasMore && last
+          ? this.encodeCursor({ created_at: last.created_at as string, id: last.id })
+          : null,
+    };
   }
 
   async add(pharmacyId: string, dto: AddInventoryItemDto) {
@@ -273,5 +294,15 @@ export class InventoryService {
         'Expiry date is already expired and cannot be added to active inventory',
       );
     }
+  }
+
+  private encodeCursor(payload: { created_at: string; id: string }): string {
+    return Buffer.from(JSON.stringify(payload)).toString('base64');
+  }
+
+  private decodeCursor(cursor: string): { created_at: string; id: string } {
+    return JSON.parse(
+      Buffer.from(cursor, 'base64').toString('utf-8'),
+    ) as { created_at: string; id: string };
   }
 }
