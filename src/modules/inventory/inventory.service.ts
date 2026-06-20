@@ -35,78 +35,98 @@ const INVENTORY_SELECT = `
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly supabase: SupabaseService) {}
+  constructor(private readonly supabase: SupabaseService) { }
 
   async list(pharmacyId: string, filters: InventoryFilterDto) {
     const limit = filters.limit ?? 20;
 
+    // Count query — runs in parallel with data query for performance
+    // Applies same filters as data query (except cursor/limit)
+    let countQuery = this.supabase.adminClient
+      .from('inventory')
+      .select('id', { count: 'exact', head: true })
+      .eq('pharmacy_id', pharmacyId);
+
+    if (filters.id) countQuery = countQuery.eq('id', filters.id);
+    if (filters.drug_id) countQuery = countQuery.eq('drug_id', filters.drug_id);
+    if (filters.status) countQuery = countQuery.eq('status', filters.status);
+    if (filters.batch_number?.trim()) countQuery = countQuery.ilike('batch_number', `%${filters.batch_number.trim()}%`);
+    if (filters.quantity !== undefined) countQuery = countQuery.eq('quantity', filters.quantity);
+    if (filters.expiry_date) countQuery = countQuery.eq('expiry_date', filters.expiry_date);
+    if (filters.selling_price !== undefined) countQuery = countQuery.eq('selling_price', filters.selling_price);
+    if (filters.discount_percent !== undefined) countQuery = countQuery.eq('discount_percent', filters.discount_percent);
+    if (filters.near_expiry) {
+      countQuery = countQuery
+        .eq('status', 'active')
+        .gte('expiry_date', this.getTodayDateString())
+        .lte('expiry_date', this.getDateDaysFromNow(30));
+    }
+
+    // Data query
     let query = this.supabase.adminClient
       .from('inventory')
       .select(INVENTORY_SELECT)
       .eq('pharmacy_id', pharmacyId)
       .order('created_at', { ascending: false })
-      .limit(limit);
+      .order('id', { ascending: false })
+      .limit(limit + 1);
 
-    if (filters.id) {
-      query = query.eq('id', filters.id);
-    }
-
-    if (filters.drug_id) {
-      query = query.eq('drug_id', filters.drug_id);
-    }
-
-    if (filters.status) {
-      query = query.eq('status', filters.status);
-    }
-
-    if (filters.batch_number?.trim()) {
-      query = query.ilike('batch_number', `%${filters.batch_number.trim()}%`);
-    }
-
-    if (filters.quantity !== undefined) {
-      query = query.eq('quantity', filters.quantity);
-    }
-
-    if (filters.expiry_date) {
-      query = query.eq('expiry_date', filters.expiry_date);
-    }
-
-    if (filters.selling_price !== undefined) {
-      query = query.eq('selling_price', filters.selling_price);
-    }
-
-    if (filters.discount_percent !== undefined) {
-      query = query.eq('discount_percent', filters.discount_percent);
-    }
-
+    if (filters.id) query = query.eq('id', filters.id);
+    if (filters.drug_id) query = query.eq('drug_id', filters.drug_id);
+    if (filters.status) query = query.eq('status', filters.status);
+    if (filters.batch_number?.trim()) query = query.ilike('batch_number', `%${filters.batch_number.trim()}%`);
+    if (filters.quantity !== undefined) query = query.eq('quantity', filters.quantity);
+    if (filters.expiry_date) query = query.eq('expiry_date', filters.expiry_date);
+    if (filters.selling_price !== undefined) query = query.eq('selling_price', filters.selling_price);
+    if (filters.discount_percent !== undefined) query = query.eq('discount_percent', filters.discount_percent);
     if (filters.near_expiry) {
       query = query
         .eq('status', 'active')
         .gte('expiry_date', this.getTodayDateString())
         .lte('expiry_date', this.getDateDaysFromNow(30));
     }
-
-    const { data, error } = await query;
-
-    if (error) {
-      this.supabase.throwFromPostgresError(error);
+    if (filters.cursor) {
+      const cursor = this.decodeCursor(filters.cursor);
+      query = query.or(
+        `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`,
+      );
     }
 
-    if (!filters.search?.trim()) {
-      return data ?? [];
+    // Run both queries in parallel
+    const [countResult, dataResult] = await Promise.all([countQuery, query]);
+
+    if (countResult.error) this.supabase.throwFromPostgresError(countResult.error);
+    if (dataResult.error) this.supabase.throwFromPostgresError(dataResult.error);
+
+    let items = dataResult.data ?? [];
+
+    // in-memory search filter (applied after DB fetch)
+    if (filters.search?.trim()) {
+      const search = filters.search.trim().toLowerCase();
+      items = items.filter((item) => {
+        const drug = item.drug as unknown as Record<string, string | null> | null;
+        return [
+          item.batch_number,
+          drug?.brand_name,
+          drug?.brand_name_ar,
+          drug?.generic_name,
+          drug?.active_ingredient,
+        ].some((value) => value?.toLowerCase().includes(search));
+      });
     }
 
-    const search = filters.search.trim().toLowerCase();
-    return (data ?? []).filter((item) => {
-      const drug = item.drug as unknown as Record<string, string | null> | null;
-      return [
-        item.batch_number,
-        drug?.brand_name,
-        drug?.brand_name_ar,
-        drug?.generic_name,
-        drug?.active_ingredient,
-      ].some((value) => value?.toLowerCase().includes(search));
-    });
+    const hasMore = items.length > limit;
+    const page = hasMore ? items.slice(0, limit) : items;
+    const last = page[page.length - 1];
+
+    return {
+      items: page,
+      nextCursor:
+        hasMore && last
+          ? this.encodeCursor({ created_at: last.created_at as string, id: last.id })
+          : null,
+      total: countResult.count ?? 0,
+    };
   }
 
   async add(pharmacyId: string, dto: AddInventoryItemDto) {
@@ -273,5 +293,15 @@ export class InventoryService {
         'Expiry date is already expired and cannot be added to active inventory',
       );
     }
+  }
+
+  private encodeCursor(payload: { created_at: string; id: string }): string {
+    return Buffer.from(JSON.stringify(payload)).toString('base64');
+  }
+
+  private decodeCursor(cursor: string): { created_at: string; id: string } {
+    return JSON.parse(
+      Buffer.from(cursor, 'base64').toString('utf-8'),
+    ) as { created_at: string; id: string };
   }
 }

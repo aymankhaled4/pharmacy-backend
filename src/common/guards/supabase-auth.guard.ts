@@ -5,10 +5,14 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
+import { UserAccountService } from '../services/user-account.service';
 
 @Injectable()
 export class SupabaseAuthGuard implements CanActivate {
-  constructor(private supabase: SupabaseService) {}
+  constructor(
+    private supabase: SupabaseService,
+    private userAccount: UserAccountService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -25,6 +29,8 @@ export class SupabaseAuthGuard implements CanActivate {
     if (error || !data.user) {
       throw new UnauthorizedException('Invalid or expired token');
     }
+
+    await this.userAccount.assertCanAccess(data.user.id);
 
     request.user = {
       id: data.user.id,

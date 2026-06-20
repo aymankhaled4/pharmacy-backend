@@ -5,6 +5,7 @@ import {
   Min,
   Max,
   IsBoolean,
+  IsIn,
 } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type, Transform } from 'class-transformer';
@@ -30,4 +31,17 @@ export class ListUsersQueryDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   include_deleted?: boolean = false;
+
+  @ApiPropertyOptional({
+    enum: ['user', 'admin'],
+    description: 'Filter by role (pharmacies are not listed here)',
+  })
+  @IsOptional()
+  @IsIn(['user', 'admin'])
+  role?: 'user' | 'admin';
+
+  @ApiPropertyOptional({ enum: ['active', 'blocked', 'deleted'] })
+  @IsOptional()
+  @IsIn(['active', 'blocked', 'deleted'])
+  status?: 'active' | 'blocked' | 'deleted';
 }

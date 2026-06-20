@@ -8,6 +8,8 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,8 +20,10 @@ import {
 import { AdminService } from './admin.service';
 import { ReviewPharmacyDto } from './dto/review-pharmacy.dto';
 import { SoftDeleteUserDto } from './dto/soft-delete-user.dto';
+import { BulkUserIdsDto } from './dto/bulk-user-ids.dto';
 import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { CreateAccountDto } from './dto/create-account.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
 import { ActivityQueryDto } from './dto/activity-query.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
@@ -37,7 +41,10 @@ export class AdminController {
   constructor(private adminService: AdminService) {}
 
   @Get('pharmacies')
-  @ApiOperation({ summary: 'List all pharmacies (filter by status)' })
+  @ApiOperation({
+    summary:
+      'List pharmacies (verification queue). Returns { items, nextCursor, total }.',
+  })
   listPharmacies(@Query() query: ListPharmaciesQueryDto) {
     return this.adminService.listPharmacies(query);
   }
@@ -62,9 +69,45 @@ export class AdminController {
   }
 
   @Get('users')
-  @ApiOperation({ summary: 'List all users with cursor pagination' })
+  @ApiOperation({
+    summary:
+      'List patients (user) and admins only — pharmacies use GET /admin/pharmacies',
+  })
   listUsers(@Query() query: ListUsersQueryDto) {
     return this.adminService.listUsers(query);
+  }
+
+  @Post('users')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Create a new user or admin account (status: active)',
+  })
+  createAccount(@Body() dto: CreateAccountDto) {
+    return this.adminService.createAccount(dto);
+  }
+
+  @Post('users/bulk/active')
+  @ApiOperation({ summary: 'Activate multiple users (blocked → active)' })
+  bulkActivateUsers(@Body() dto: BulkUserIdsDto) {
+    return this.adminService.bulkActivateUsers(dto.user_ids);
+  }
+
+  @Post('users/bulk/inactive')
+  @ApiOperation({ summary: 'Deactivate multiple users (active → blocked)' })
+  bulkDeactivateUsers(@Body() dto: BulkUserIdsDto) {
+    return this.adminService.bulkDeactivateUsers(dto.user_ids);
+  }
+
+  @Post('users/:id/active')
+  @ApiOperation({ summary: 'Activate a user (blocked → active)' })
+  activateUser(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.activateUser(id);
+  }
+
+  @Post('users/:id/inactive')
+  @ApiOperation({ summary: 'Deactivate a user (active → blocked)' })
+  deactivateUser(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.deactivateUser(id);
   }
 
   @Delete('users/:id')
@@ -77,6 +120,18 @@ export class AdminController {
     return this.adminService.softDeleteUser(id);
   }
 
+  @Post('users/:id/block')
+  @ApiOperation({ summary: 'Block a user account (alias for inactive)' })
+  blockUser(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.deactivateUser(id);
+  }
+
+  @Post('users/:id/unblock')
+  @ApiOperation({ summary: 'Unblock a user account (alias for active)' })
+  unblockUser(@Param('id', ParseUUIDPipe) id: string) {
+    return this.adminService.activateUser(id);
+  }
+
   @Get('reservations')
   @ApiOperation({
     summary: 'List all reservations (filter by status, date range)',
@@ -86,7 +141,9 @@ export class AdminController {
   }
 
   @Get('analytics/overview')
-  @ApiOperation({ summary: 'System KPIs overview' })
+  @ApiOperation({
+    summary: 'System KPIs and pharmacy verification stats',
+  })
   getAnalyticsOverview() {
     return this.adminService.getAnalyticsOverview();
   }
