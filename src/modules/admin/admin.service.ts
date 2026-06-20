@@ -20,6 +20,12 @@ export interface UserProfileRow {
   deleted_at: string | null;
 }
 
+export interface AdminUserListItem extends UserProfileRow {
+  email: string | null;
+  last_login: string | null;
+  status: 'active' | 'deleted';
+}
+
 export interface ReservationListRow {
   created_at: string;
   id: string;
@@ -164,14 +170,34 @@ export class AdminService {
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
     const last = page[page.length - 1];
+    const enrichedPage = await this.enrichUsersWithAuth(page);
 
     return {
-      items: page,
+      items: enrichedPage,
       nextCursor:
         hasMore && last
           ? this.encodeCursor({ created_at: last.created_at, id: last.id })
           : null,
     };
+  }
+
+  private async enrichUsersWithAuth(
+    profiles: UserProfileRow[],
+  ): Promise<AdminUserListItem[]> {
+    return Promise.all(
+      profiles.map(async (profile) => {
+        const { data } = await this.supabase.adminClient.auth.admin.getUserById(
+          profile.id,
+        );
+
+        return {
+          ...profile,
+          email: data.user?.email ?? null,
+          last_login: data.user?.last_sign_in_at ?? null,
+          status: profile.deleted_at ? 'deleted' : 'active',
+        };
+      }),
+    );
   }
 
   async softDeleteUser(id: string) {

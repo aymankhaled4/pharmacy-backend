@@ -5,23 +5,75 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:3000/api/v1" },
-    { "key": "supabase_url", "value": "https://your-project.supabase.co" },
-    { "key": "supabase_anon_key", "value": "your-anon-key" },
-    { "key": "user_email", "value": "user@example.com" },
-    { "key": "user_password", "value": "SecurePass123!" },
-    { "key": "pharmacy_email", "value": "pharmacy@example.com" },
-    { "key": "pharmacy_password", "value": "SecurePass123!" },
-    { "key": "admin_email", "value": "admin@example.com" },
-    { "key": "admin_password", "value": "AdminPass123!" },
-    { "key": "access_token", "value": "", "description": "Last login token (any role)" },
-    { "key": "user_token", "value": "" },
-    { "key": "pharmacy_token", "value": "" },
-    { "key": "admin_token", "value": "" },
-    { "key": "user_id", "value": "" },
-    { "key": "pharmacy_id", "value": "" },
-    { "key": "inventory_id", "value": "" },
-    { "key": "reservation_id", "value": "" }
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000/api/v1"
+    },
+    {
+      "key": "supabase_url",
+      "value": "https://your-project.supabase.co"
+    },
+    {
+      "key": "supabase_anon_key",
+      "value": "your-anon-key"
+    },
+    {
+      "key": "user_email",
+      "value": "user@example.com"
+    },
+    {
+      "key": "user_password",
+      "value": "SecurePass123!"
+    },
+    {
+      "key": "pharmacy_email",
+      "value": "pharmacy@example.com"
+    },
+    {
+      "key": "pharmacy_password",
+      "value": "SecurePass123!"
+    },
+    {
+      "key": "admin_email",
+      "value": "admin@example.com"
+    },
+    {
+      "key": "admin_password",
+      "value": "AdminPass123!"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "description": "Last login token (any role)"
+    },
+    {
+      "key": "user_token",
+      "value": ""
+    },
+    {
+      "key": "pharmacy_token",
+      "value": ""
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "pharmacy_id",
+      "value": ""
+    },
+    {
+      "key": "inventory_id",
+      "value": ""
+    },
+    {
+      "key": "reservation_id",
+      "value": ""
+    }
   ],
   "item": [
     {
@@ -72,7 +124,12 @@
               ],
               "request": {
                 "method": "POST",
-                "header": [{ "key": "Content-Type", "value": "application/json" }],
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
                 "body": {
                   "mode": "raw",
                   "raw": "{\n  \"email\": \"{{pharmacy_email}}\",\n  \"password\": \"{{pharmacy_password}}\",\n  \"pharmacy_name\": \"El Nour Pharmacy\",\n  \"phone\": \"+201012345678\",\n  \"address\": \"15 Tahrir Street, Downtown\",\n  \"city\": \"Cairo\",\n  \"license_number\": \"PH-LIC-2024-001\",\n  \"latitude\": 30.0444,\n  \"longitude\": 31.2357\n}"
@@ -111,8 +168,14 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  { "key": "apikey", "value": "{{supabase_anon_key}}" },
-                  { "key": "Content-Type", "value": "application/json" }
+                  {
+                    "key": "apikey",
+                    "value": "{{supabase_anon_key}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
                 ],
                 "body": {
                   "mode": "raw",
@@ -147,8 +210,14 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  { "key": "apikey", "value": "{{supabase_anon_key}}" },
-                  { "key": "Content-Type", "value": "application/json" }
+                  {
+                    "key": "apikey",
+                    "value": "{{supabase_anon_key}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
                 ],
                 "body": {
                   "mode": "raw",
@@ -179,8 +248,14 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  { "key": "apikey", "value": "{{supabase_anon_key}}" },
-                  { "key": "Content-Type", "value": "application/json" }
+                  {
+                    "key": "apikey",
+                    "value": "{{supabase_anon_key}}"
+                  },
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
                 ],
                 "body": {
                   "mode": "raw",
@@ -199,7 +274,10 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  { "key": "Authorization", "value": "Bearer {{user_token}}" }
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{user_token}}"
+                  }
                 ],
                 "url": "{{base_url}}/auth/role"
               }
@@ -209,7 +287,10 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  { "key": "Authorization", "value": "Bearer {{pharmacy_token}}" }
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{pharmacy_token}}"
+                  }
                 ],
                 "url": "{{base_url}}/auth/role"
               }
@@ -219,7 +300,10 @@
               "request": {
                 "method": "POST",
                 "header": [
-                  { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{admin_token}}"
+                  }
                 ],
                 "url": "{{base_url}}/auth/role"
               }
@@ -237,7 +321,10 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{user_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              }
             ],
             "url": "{{base_url}}/users/me"
           }
@@ -247,8 +334,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{user_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -262,8 +355,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{user_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{user_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -283,7 +382,10 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{pharmacy_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pharmacy_token}}"
+              }
             ],
             "url": "{{base_url}}/pharmacy/me"
           }
@@ -293,8 +395,14 @@
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{pharmacy_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{pharmacy_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -314,13 +422,26 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/admin/pharmacies?status=pending",
-              "host": ["{{base_url}}"],
-              "path": ["admin", "pharmacies"],
-              "query": [{ "key": "status", "value": "pending" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "pharmacies"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "pending"
+                }
+              ]
             }
           }
         },
@@ -329,7 +450,10 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/admin/pharmacies/{{pharmacy_id}}/approve"
           }
@@ -339,8 +463,14 @@
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -354,16 +484,35 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/admin/users?limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["admin", "users"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "users"
+              ],
               "query": [
-                { "key": "limit", "value": "20" },
-                { "key": "include_deleted", "value": "false", "disabled": true },
-                { "key": "cursor", "value": "", "disabled": true }
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "include_deleted",
+                  "value": "false",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -373,8 +522,14 @@
           "request": {
             "method": "DELETE",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" },
-              { "key": "Content-Type", "value": "application/json" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
             ],
             "body": {
               "mode": "raw",
@@ -388,17 +543,40 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/admin/reservations?limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["admin", "reservations"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "reservations"
+              ],
               "query": [
-                { "key": "limit", "value": "20" },
-                { "key": "status", "value": "pending", "disabled": true },
-                { "key": "from_date", "value": "2026-01-01T00:00:00.000Z", "disabled": true },
-                { "key": "to_date", "value": "2026-12-31T23:59:59.999Z", "disabled": true }
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                },
+                {
+                  "key": "from_date",
+                  "value": "2026-01-01T00:00:00.000Z",
+                  "disabled": true
+                },
+                {
+                  "key": "to_date",
+                  "value": "2026-12-31T23:59:59.999Z",
+                  "disabled": true
+                }
               ]
             }
           }
@@ -408,7 +586,10 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": "{{base_url}}/admin/analytics/overview"
           }
@@ -418,13 +599,28 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/admin/analytics/drugs/searched?limit=10",
-              "host": ["{{base_url}}"],
-              "path": ["admin", "analytics", "drugs", "searched"],
-              "query": [{ "key": "limit", "value": "10" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "analytics",
+                "drugs",
+                "searched"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
             }
           }
         },
@@ -433,13 +629,28 @@
           "request": {
             "method": "GET",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{admin_token}}" }
+              {
+                "key": "Authorization",
+                "value": "Bearer {{admin_token}}"
+              }
             ],
             "url": {
               "raw": "{{base_url}}/admin/analytics/drugs/purchased?limit=10",
-              "host": ["{{base_url}}"],
-              "path": ["admin", "analytics", "drugs", "purchased"],
-              "query": [{ "key": "limit", "value": "10" }]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "analytics",
+                "drugs",
+                "purchased"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
             }
           }
         }
