@@ -351,7 +351,10 @@ export class AdminService {
   }
 
   private applyAccountStatusFilter<
-    T extends { eq: (col: string, val: string) => T; neq: (col: string, val: string) => T },
+    T extends {
+      eq: (col: string, val: string) => T;
+      neq: (col: string, val: string) => T;
+    },
   >(dbQuery: T, query: ListUsersQueryDto): T {
     if (query.status) {
       return dbQuery.eq('status', query.status);
@@ -403,23 +406,23 @@ export class AdminService {
   }
 
   private async resolveProfileTable(id: string): Promise<ProfileTable | null> {
-    const { data: user } = await this.supabase.adminClient
-      .from('user_profiles')
-      .select('id')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (user) {
-      return 'user_profiles';
-    }
-
     const { data: admin } = await this.supabase.adminClient
       .from('admin_profiles')
       .select('id')
       .eq('id', id)
       .maybeSingle();
 
-    return admin ? 'admin_profiles' : null;
+    if (admin) {
+      return 'admin_profiles';
+    }
+
+    const { data: user } = await this.supabase.adminClient
+      .from('user_profiles')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+
+    return user ? 'user_profiles' : null;
   }
 
   private async updateAccountStatus(
