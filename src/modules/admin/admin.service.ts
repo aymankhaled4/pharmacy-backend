@@ -8,6 +8,7 @@ import {
 import { SupabaseService } from '../../database/supabase.service';
 import { CacheService } from '../../shared/cache/cache.service';
 import { UserAccountService } from '../../common/services/user-account.service';
+import { AuthUserLookupService } from '../../common/services/auth-user-lookup.service';
 import { UserAccountStatus } from '../../common/types/user-account-status.type';
 import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
@@ -24,6 +25,15 @@ interface CursorPayload {
 
 type ListableAccountRole = 'user' | 'admin';
 type ProfileTable = 'user_profiles' | 'admin_profiles';
+
+interface AccountProfileSource {
+  role: ListableAccountRole;
+}
+
+const ACCOUNT_PROFILE_SOURCES: AccountProfileSource[] = [
+  { role: 'user' },
+  { role: 'admin' },
+];
 
 interface ProfileDbRow {
   id: string;
@@ -97,6 +107,7 @@ export class AdminService {
     private supabase: SupabaseService,
     private cache: CacheService,
     private userAccount: UserAccountService,
+    private authLookup: AuthUserLookupService,
   ) {}
 
   async listPharmacies(query: ListPharmaciesQueryDto) {
@@ -202,7 +213,7 @@ export class AdminService {
       }
 
       return {
-        ...this.mapProfileRow(data as ProfileDbRow, 'admin'),
+        ...this.toAccountListRow(data as ProfileDbRow, 'admin'),
         email: authData.user.email ?? dto.email,
         last_login: null,
       };
@@ -225,7 +236,7 @@ export class AdminService {
     }
 
     return {
-      ...this.mapProfileRow(data as ProfileDbRow, 'user'),
+      ...this.toAccountListRow(data as ProfileDbRow, 'user'),
       email: authData.user.email ?? dto.email,
       last_login: null,
     };
@@ -233,44 +244,51 @@ export class AdminService {
 
   async listUsers(query: ListUsersQueryDto) {
     const limit = query.limit ?? 20;
+    const fetchLimit = limit + 1;
     const cursor = query.cursor ? this.decodeCursor(query.cursor) : null;
 
-    if (query.role) {
-      const items = await this.fetchAccountsByRole(
-        query.role,
-        query,
-        limit + 1,
-        cursor,
-      );
-      return this.buildAccountListResponse(items, limit);
-    }
+    const sources = query.role
+      ? ACCOUNT_PROFILE_SOURCES.filter((s) => s.role === query.role)
+      : ACCOUNT_PROFILE_SOURCES;
 
-    const batches = await Promise.all([
-      this.fetchAccountsByRole('user', query, limit + 1, cursor),
-      this.fetchAccountsByRole('admin', query, limit + 1, cursor),
-    ]);
+    const profileRows = await Promise.all(
+      sources.map((source) =>
+        this.queryProfileSource(source, query, fetchLimit, cursor),
+      ),
+    );
 
-    const merged = batches
-      .flat()
-      .sort((a, b) => this.compareAccountsDesc(a, b));
+    const sorted = this.sortAccountsByNewest(profileRows.flat());
+    const hasMore = sorted.length > limit;
+    const page = hasMore ? sorted.slice(0, limit) : sorted;
+    const last = page[page.length - 1];
 
-    return this.buildAccountListResponse(merged, limit);
+    const authById = await this.authLookup.getDetailsByIds(
+      page.map((account) => account.id),
+    );
+
+    return {
+      items: page.map((account) => this.attachAuthDetails(account, authById)),
+      nextCursor:
+        hasMore && last
+          ? this.encodeCursor({ created_at: last.created_at, id: last.id })
+          : null,
+    };
   }
 
-  private async fetchAccountsByRole(
-    role: ListableAccountRole,
+  private async queryProfileSource(
+    source: AccountProfileSource,
     query: ListUsersQueryDto,
     limit: number,
     cursor: CursorPayload | null,
   ): Promise<AccountListRow[]> {
-    if (role === 'user') {
-      return this.fetchUserAccounts(query, limit, cursor);
+    if (source.role === 'user') {
+      return this.queryUserProfiles(query, limit, cursor);
     }
 
-    return this.fetchAdminAccounts(query, limit, cursor);
+    return this.queryAdminProfiles(query, limit, cursor);
   }
 
-  private async fetchUserAccounts(
+  private async queryUserProfiles(
     query: ListUsersQueryDto,
     limit: number,
     cursor: CursorPayload | null,
@@ -282,11 +300,7 @@ export class AdminService {
       .order('id', { ascending: false })
       .limit(limit);
 
-    if (query.status) {
-      dbQuery = dbQuery.eq('status', query.status);
-    } else if (!query.include_deleted) {
-      dbQuery = dbQuery.neq('status', 'deleted');
-    }
+    dbQuery = this.applyAccountStatusFilter(dbQuery, query);
 
     if (cursor) {
       dbQuery = dbQuery.or(
@@ -301,11 +315,11 @@ export class AdminService {
     }
 
     return ((data ?? []) as ProfileDbRow[]).map((row) =>
-      this.mapProfileRow(row, 'user'),
+      this.toAccountListRow(row, 'user'),
     );
   }
 
-  private async fetchAdminAccounts(
+  private async queryAdminProfiles(
     query: ListUsersQueryDto,
     limit: number,
     cursor: CursorPayload | null,
@@ -317,11 +331,7 @@ export class AdminService {
       .order('id', { ascending: false })
       .limit(limit);
 
-    if (query.status) {
-      dbQuery = dbQuery.eq('status', query.status);
-    } else if (!query.include_deleted) {
-      dbQuery = dbQuery.neq('status', 'deleted');
-    }
+    dbQuery = this.applyAccountStatusFilter(dbQuery, query);
 
     if (cursor) {
       dbQuery = dbQuery.or(
@@ -336,11 +346,38 @@ export class AdminService {
     }
 
     return ((data ?? []) as ProfileDbRow[]).map((row) =>
-      this.mapProfileRow(row, 'admin'),
+      this.toAccountListRow(row, 'admin'),
     );
   }
 
-  private mapProfileRow(
+  private applyAccountStatusFilter<
+    T extends { eq: (col: string, val: string) => T; neq: (col: string, val: string) => T },
+  >(dbQuery: T, query: ListUsersQueryDto): T {
+    if (query.status) {
+      return dbQuery.eq('status', query.status);
+    }
+
+    if (!query.include_deleted) {
+      return dbQuery.neq('status', 'deleted');
+    }
+
+    return dbQuery;
+  }
+
+  private attachAuthDetails(
+    account: AccountListRow,
+    authById: Map<string, { email: string | null; last_login: string | null }>,
+  ): AdminAccountListItem {
+    const auth = authById.get(account.id);
+
+    return {
+      ...account,
+      email: auth?.email ?? null,
+      last_login: auth?.last_login ?? null,
+    };
+  }
+
+  private toAccountListRow(
     row: ProfileDbRow,
     role: ListableAccountRole,
   ): AccountListRow {
@@ -355,48 +392,14 @@ export class AdminService {
     };
   }
 
-  private compareAccountsDesc(a: AccountListRow, b: AccountListRow): number {
-    if (a.created_at !== b.created_at) {
-      return a.created_at > b.created_at ? -1 : 1;
-    }
+  private sortAccountsByNewest(accounts: AccountListRow[]): AccountListRow[] {
+    return accounts.sort((a, b) => {
+      if (a.created_at !== b.created_at) {
+        return a.created_at > b.created_at ? -1 : 1;
+      }
 
-    return a.id > b.id ? -1 : a.id < b.id ? 1 : 0;
-  }
-
-  private async buildAccountListResponse(
-    items: AccountListRow[],
-    limit: number,
-  ) {
-    const hasMore = items.length > limit;
-    const page = hasMore ? items.slice(0, limit) : items;
-    const last = page[page.length - 1];
-    const enrichedPage = await this.enrichAccountsWithAuth(page);
-
-    return {
-      items: enrichedPage,
-      nextCursor:
-        hasMore && last
-          ? this.encodeCursor({ created_at: last.created_at, id: last.id })
-          : null,
-    };
-  }
-
-  private async enrichAccountsWithAuth(
-    accounts: AccountListRow[],
-  ): Promise<AdminAccountListItem[]> {
-    return Promise.all(
-      accounts.map(async (account) => {
-        const { data } = await this.supabase.adminClient.auth.admin.getUserById(
-          account.id,
-        );
-
-        return {
-          ...account,
-          email: data.user?.email ?? null,
-          last_login: data.user?.last_sign_in_at ?? null,
-        };
-      }),
-    );
+      return a.id > b.id ? -1 : a.id < b.id ? 1 : 0;
+    });
   }
 
   private async resolveProfileTable(id: string): Promise<ProfileTable | null> {
@@ -448,7 +451,7 @@ export class AdminService {
       }
 
       const row = data as ProfileDbRow | null;
-      return row ? this.mapProfileRow(row, 'user') : null;
+      return row ? this.toAccountListRow(row, 'user') : null;
     }
 
     let dbQuery = this.supabase.adminClient
@@ -469,7 +472,7 @@ export class AdminService {
     }
 
     const row = data as ProfileDbRow | null;
-    return row ? this.mapProfileRow(row, 'admin') : null;
+    return row ? this.toAccountListRow(row, 'admin') : null;
   }
 
   async softDeleteUser(id: string) {
@@ -500,7 +503,7 @@ export class AdminService {
       }
 
       await this.cache.delete(this.cache.roleKey(id));
-      return { success: true, user: this.mapProfileRow(row, 'user') };
+      return { success: true, user: this.toAccountListRow(row, 'user') };
     }
 
     const { data, error } = await this.supabase.adminClient
@@ -524,7 +527,7 @@ export class AdminService {
     }
 
     await this.cache.delete(this.cache.roleKey(id));
-    return { success: true, user: this.mapProfileRow(row, 'admin') };
+    return { success: true, user: this.toAccountListRow(row, 'admin') };
   }
 
   async activateUser(id: string) {

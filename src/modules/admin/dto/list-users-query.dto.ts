@@ -34,7 +34,7 @@ export class ListUsersQueryDto {
 
   @ApiPropertyOptional({
     enum: ['user', 'admin'],
-    description: 'Filter by account role',
+    description: 'Filter by role (pharmacies are not listed here)',
   })
   @IsOptional()
   @IsIn(['user', 'admin'])

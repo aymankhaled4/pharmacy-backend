@@ -66,7 +66,8 @@ export class AdminController {
 
   @Get('users')
   @ApiOperation({
-    summary: 'List users and admins with role and cursor pagination',
+    summary:
+      'List patients (user) and admins only — pharmacies use GET /admin/pharmacies',
   })
   listUsers(@Query() query: ListUsersQueryDto) {
     return this.adminService.listUsers(query);
