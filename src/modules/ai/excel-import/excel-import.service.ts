@@ -149,16 +149,28 @@ export class ExcelImportService {
         pharmacyId: string,
         row: ReturnType<typeof ExcelParser.normalize>,
     ): Promise<void> {
-        const { error } = await this.supabase.adminClient.from('inventory').insert({
-            drug_id: drugId,
-            pharmacy_id: pharmacyId,
-            quantity: row.quantity!,
-            selling_price: row.selling_price!,
-            discount_percent: row.discount_percent ?? 0,
-            batch_number: row.batch_number ?? null,
-            expiry_date: row.expiry_date ?? null,
-            status: 'active',
-        });
+        // Upsert logic:
+        //   - same drug_id + pharmacy_id + batch_number (non-null) → update quantity/price/expiry
+        //   - same drug_id + pharmacy_id + batch_number = null     → update (partial unique index)
+        //   - different batch_number                               → insert new row
+        const { error } = await this.supabase.adminClient
+            .from('inventory')
+            .upsert(
+                {
+                    drug_id: drugId,
+                    pharmacy_id: pharmacyId,
+                    batch_number: row.batch_number ?? null,
+                    quantity: row.quantity!,
+                    selling_price: row.selling_price!,
+                    expiry_date: row.expiry_date ?? null,
+                    discount_percent: row.discount_percent ?? 0,
+                    status: 'active',
+                },
+                {
+                    onConflict: 'drug_id,pharmacy_id,batch_number',
+                    ignoreDuplicates: false,
+                },
+            );
 
         if (error) throw new Error(error.message);
     }
