@@ -8,6 +8,8 @@ import {
   Query,
   UseGuards,
   ParseUUIDPipe,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -21,6 +23,7 @@ import { SoftDeleteUserDto } from './dto/soft-delete-user.dto';
 import { BulkUserIdsDto } from './dto/bulk-user-ids.dto';
 import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { CreateAccountDto } from './dto/create-account.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -67,6 +70,15 @@ export class AdminController {
   })
   listUsers(@Query() query: ListUsersQueryDto) {
     return this.adminService.listUsers(query);
+  }
+
+  @Post('users')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Create a new user or admin account (status: active)',
+  })
+  createAccount(@Body() dto: CreateAccountDto) {
+    return this.adminService.createAccount(dto);
   }
 
   @Post('users/bulk/active')

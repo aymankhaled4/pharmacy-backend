@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { CacheService } from '../../shared/cache/cache.service';
@@ -10,6 +12,7 @@ import { UserAccountStatus } from '../../common/types/user-account-status.type';
 import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
+import { CreateAccountDto } from './dto/create-account.dto';
 
 const PHARMACY_SELECT =
   'id, pharmacy_name, phone, address, city, license_number, status, rejection_reason, verified_by, verified_at, created_at';
@@ -161,6 +164,71 @@ export class AdminService {
     }
 
     return data;
+  }
+
+  async createAccount(dto: CreateAccountDto) {
+    const role = dto.role ?? 'user';
+
+    const { data: authData, error: authError } =
+      await this.supabase.adminClient.auth.admin.createUser({
+        email: dto.email,
+        password: dto.password,
+        email_confirm: true,
+      });
+
+    if (authError) {
+      if (authError.message?.toLowerCase().includes('already')) {
+        throw new ConflictException('Email already registered');
+      }
+      throw new InternalServerErrorException(authError.message);
+    }
+
+    const userId = authData.user.id;
+
+    if (role === 'admin') {
+      const { data, error } = await this.supabase.adminClient
+        .from('admin_profiles')
+        .insert({
+          id: userId,
+          full_name: dto.full_name,
+          status: 'active',
+        })
+        .select('id, full_name, deleted_at, status, created_at')
+        .single();
+
+      if (error) {
+        await this.supabase.adminClient.auth.admin.deleteUser(userId);
+        this.supabase.throwFromPostgresError(error);
+      }
+
+      return {
+        ...this.mapProfileRow(data as ProfileDbRow, 'admin'),
+        email: authData.user.email ?? dto.email,
+        last_login: null,
+      };
+    }
+
+    const { data, error } = await this.supabase.adminClient
+      .from('user_profiles')
+      .insert({
+        id: userId,
+        full_name: dto.full_name,
+        phone: dto.phone ?? null,
+        status: 'active',
+      })
+      .select('id, full_name, phone, deleted_at, status, created_at')
+      .single();
+
+    if (error) {
+      await this.supabase.adminClient.auth.admin.deleteUser(userId);
+      this.supabase.throwFromPostgresError(error);
+    }
+
+    return {
+      ...this.mapProfileRow(data as ProfileDbRow, 'user'),
+      email: authData.user.email ?? dto.email,
+      last_login: null,
+    };
   }
 
   async listUsers(query: ListUsersQueryDto) {
