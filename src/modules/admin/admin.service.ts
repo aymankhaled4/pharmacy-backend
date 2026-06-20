@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { CacheService } from '../../shared/cache/cache.service';
 import { UserAccountService } from '../../common/services/user-account.service';
@@ -15,8 +19,21 @@ interface CursorPayload {
   id: string;
 }
 
-export interface UserProfileRow {
+type ListableAccountRole = 'user' | 'admin';
+type ProfileTable = 'user_profiles' | 'admin_profiles';
+
+interface ProfileDbRow {
   id: string;
+  full_name: string | null;
+  phone?: string | null;
+  deleted_at: string | null;
+  status: UserAccountStatus;
+  created_at: string;
+}
+
+export interface AccountListRow {
+  id: string;
+  role: ListableAccountRole;
   full_name: string | null;
   phone: string | null;
   created_at: string;
@@ -24,7 +41,7 @@ export interface UserProfileRow {
   status: UserAccountStatus;
 }
 
-export interface AdminUserListItem extends UserProfileRow {
+export interface AdminAccountListItem extends AccountListRow {
   email: string | null;
   last_login: string | null;
 }
@@ -148,13 +165,54 @@ export class AdminService {
 
   async listUsers(query: ListUsersQueryDto) {
     const limit = query.limit ?? 20;
+    const cursor = query.cursor ? this.decodeCursor(query.cursor) : null;
 
+    if (query.role) {
+      const items = await this.fetchAccountsByRole(
+        query.role,
+        query,
+        limit + 1,
+        cursor,
+      );
+      return this.buildAccountListResponse(items, limit);
+    }
+
+    const batches = await Promise.all([
+      this.fetchAccountsByRole('user', query, limit + 1, cursor),
+      this.fetchAccountsByRole('admin', query, limit + 1, cursor),
+    ]);
+
+    const merged = batches
+      .flat()
+      .sort((a, b) => this.compareAccountsDesc(a, b));
+
+    return this.buildAccountListResponse(merged, limit);
+  }
+
+  private async fetchAccountsByRole(
+    role: ListableAccountRole,
+    query: ListUsersQueryDto,
+    limit: number,
+    cursor: CursorPayload | null,
+  ): Promise<AccountListRow[]> {
+    if (role === 'user') {
+      return this.fetchUserAccounts(query, limit, cursor);
+    }
+
+    return this.fetchAdminAccounts(query, limit, cursor);
+  }
+
+  private async fetchUserAccounts(
+    query: ListUsersQueryDto,
+    limit: number,
+    cursor: CursorPayload | null,
+  ): Promise<AccountListRow[]> {
     let dbQuery = this.supabase.adminClient
       .from('user_profiles')
-      .select('id, full_name, phone, created_at, deleted_at, status')
+      .select('id, full_name, phone, deleted_at, status, created_at')
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
-      .limit(limit + 1);
+      .limit(limit);
 
     if (query.status) {
       dbQuery = dbQuery.eq('status', query.status);
@@ -162,8 +220,7 @@ export class AdminService {
       dbQuery = dbQuery.neq('status', 'deleted');
     }
 
-    if (query.cursor) {
-      const cursor = this.decodeCursor(query.cursor);
+    if (cursor) {
       dbQuery = dbQuery.or(
         `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`,
       );
@@ -175,11 +232,77 @@ export class AdminService {
       this.supabase.throwFromPostgresError(error);
     }
 
-    const items = (data ?? []) as UserProfileRow[];
+    return ((data ?? []) as ProfileDbRow[]).map((row) =>
+      this.mapProfileRow(row, 'user'),
+    );
+  }
+
+  private async fetchAdminAccounts(
+    query: ListUsersQueryDto,
+    limit: number,
+    cursor: CursorPayload | null,
+  ): Promise<AccountListRow[]> {
+    let dbQuery = this.supabase.adminClient
+      .from('admin_profiles')
+      .select('id, full_name, deleted_at, status, created_at')
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(limit);
+
+    if (query.status) {
+      dbQuery = dbQuery.eq('status', query.status);
+    } else if (!query.include_deleted) {
+      dbQuery = dbQuery.neq('status', 'deleted');
+    }
+
+    if (cursor) {
+      dbQuery = dbQuery.or(
+        `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`,
+      );
+    }
+
+    const { data, error } = await dbQuery;
+
+    if (error) {
+      this.supabase.throwFromPostgresError(error);
+    }
+
+    return ((data ?? []) as ProfileDbRow[]).map((row) =>
+      this.mapProfileRow(row, 'admin'),
+    );
+  }
+
+  private mapProfileRow(
+    row: ProfileDbRow,
+    role: ListableAccountRole,
+  ): AccountListRow {
+    return {
+      id: row.id,
+      role,
+      full_name: row.full_name,
+      phone: role === 'user' ? (row.phone ?? null) : null,
+      status: this.userAccount.resolveStatus(row),
+      deleted_at: row.deleted_at,
+      created_at: row.created_at,
+    };
+  }
+
+  private compareAccountsDesc(a: AccountListRow, b: AccountListRow): number {
+    if (a.created_at !== b.created_at) {
+      return a.created_at > b.created_at ? -1 : 1;
+    }
+
+    return a.id > b.id ? -1 : a.id < b.id ? 1 : 0;
+  }
+
+  private async buildAccountListResponse(
+    items: AccountListRow[],
+    limit: number,
+  ) {
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
     const last = page[page.length - 1];
-    const enrichedPage = await this.enrichUsersWithAuth(page);
+    const enrichedPage = await this.enrichAccountsWithAuth(page);
 
     return {
       items: enrichedPage,
@@ -190,18 +313,17 @@ export class AdminService {
     };
   }
 
-  private async enrichUsersWithAuth(
-    profiles: UserProfileRow[],
-  ): Promise<AdminUserListItem[]> {
+  private async enrichAccountsWithAuth(
+    accounts: AccountListRow[],
+  ): Promise<AdminAccountListItem[]> {
     return Promise.all(
-      profiles.map(async (profile) => {
+      accounts.map(async (account) => {
         const { data } = await this.supabase.adminClient.auth.admin.getUserById(
-          profile.id,
+          account.id,
         );
 
         return {
-          ...profile,
-          status: this.userAccount.resolveStatus(profile),
+          ...account,
           email: data.user?.email ?? null,
           last_login: data.user?.last_sign_in_at ?? null,
         };
@@ -209,29 +331,132 @@ export class AdminService {
     );
   }
 
-  async softDeleteUser(id: string) {
-    const { data, error } = await this.supabase.adminClient
+  private async resolveProfileTable(id: string): Promise<ProfileTable | null> {
+    const { data: user } = await this.supabase.adminClient
       .from('user_profiles')
-      .update({
-        deleted_at: new Date().toISOString(),
-        status: 'deleted',
-      })
+      .select('id')
       .eq('id', id)
-      .neq('status', 'deleted')
-      .select('id, full_name, phone, deleted_at, status')
+      .maybeSingle();
+
+    if (user) {
+      return 'user_profiles';
+    }
+
+    const { data: admin } = await this.supabase.adminClient
+      .from('admin_profiles')
+      .select('id')
+      .eq('id', id)
+      .maybeSingle();
+
+    return admin ? 'admin_profiles' : null;
+  }
+
+  private async updateAccountStatus(
+    id: string,
+    update: Record<string, unknown>,
+    filters: Record<string, unknown>,
+  ) {
+    const table = await this.resolveProfileTable(id);
+    if (!table) {
+      return null;
+    }
+
+    if (table === 'user_profiles') {
+      let dbQuery = this.supabase.adminClient
+        .from('user_profiles')
+        .update(update)
+        .eq('id', id);
+
+      for (const [key, value] of Object.entries(filters)) {
+        dbQuery = dbQuery.eq(key, value);
+      }
+
+      const { data, error } = await dbQuery
+        .select('id, full_name, phone, deleted_at, status, created_at')
+        .single();
+
+      if (error) {
+        this.supabase.throwFromPostgresError(error);
+      }
+
+      const row = data as ProfileDbRow | null;
+      return row ? this.mapProfileRow(row, 'user') : null;
+    }
+
+    let dbQuery = this.supabase.adminClient
+      .from('admin_profiles')
+      .update(update)
+      .eq('id', id);
+
+    for (const [key, value] of Object.entries(filters)) {
+      dbQuery = dbQuery.eq(key, value);
+    }
+
+    const { data, error } = await dbQuery
+      .select('id, full_name, deleted_at, status, created_at')
       .single();
 
     if (error) {
       this.supabase.throwFromPostgresError(error);
     }
 
-    if (!data) {
-      throw new NotFoundException('User not found or already deleted');
+    const row = data as ProfileDbRow | null;
+    return row ? this.mapProfileRow(row, 'admin') : null;
+  }
+
+  async softDeleteUser(id: string) {
+    const table = await this.resolveProfileTable(id);
+    if (!table) {
+      throw new NotFoundException('Account not found');
+    }
+
+    if (table === 'user_profiles') {
+      const { data, error } = await this.supabase.adminClient
+        .from('user_profiles')
+        .update({
+          deleted_at: new Date().toISOString(),
+          status: 'deleted',
+        })
+        .eq('id', id)
+        .neq('status', 'deleted')
+        .select('id, full_name, phone, deleted_at, status, created_at')
+        .single();
+
+      if (error) {
+        this.supabase.throwFromPostgresError(error);
+      }
+
+      const row = data as ProfileDbRow | null;
+      if (!row) {
+        throw new NotFoundException('Account not found or already deleted');
+      }
+
+      await this.cache.delete(this.cache.roleKey(id));
+      return { success: true, user: this.mapProfileRow(row, 'user') };
+    }
+
+    const { data, error } = await this.supabase.adminClient
+      .from('admin_profiles')
+      .update({
+        deleted_at: new Date().toISOString(),
+        status: 'deleted',
+      })
+      .eq('id', id)
+      .neq('status', 'deleted')
+      .select('id, full_name, deleted_at, status, created_at')
+      .single();
+
+    if (error) {
+      this.supabase.throwFromPostgresError(error);
+    }
+
+    const row = data as ProfileDbRow | null;
+    if (!row) {
+      throw new NotFoundException('Account not found or already deleted');
     }
 
     await this.cache.delete(this.cache.roleKey(id));
-
-    return { success: true, user: data };
+    return { success: true, user: this.mapProfileRow(row, 'admin') };
   }
 
   async activateUser(id: string) {
@@ -256,76 +481,64 @@ export class AdminService {
     toStatus: UserAccountStatus,
   ) {
     const uniqueIds = [...new Set(userIds)];
+    const users: AccountListRow[] = [];
+    const failedIds: string[] = [];
 
-    const { data, error } = await this.supabase.adminClient
-      .from('user_profiles')
-      .update({ status: toStatus })
-      .in('id', uniqueIds)
-      .eq('status', fromStatus)
-      .select('id, full_name, phone, deleted_at, status');
+    for (const id of uniqueIds) {
+      const data = await this.updateAccountStatus(
+        id,
+        { status: toStatus },
+        {
+          status: fromStatus,
+        },
+      );
 
-    if (error) {
-      this.supabase.throwFromPostgresError(error);
+      if (!data) {
+        failedIds.push(id);
+        continue;
+      }
+
+      users.push(data);
+      await this.cache.delete(this.cache.roleKey(id));
     }
-
-    const users = data ?? [];
-    const updatedIds = new Set(users.map((user) => user.id));
-
-    await Promise.all(
-      users.map((user) => this.cache.delete(this.cache.roleKey(user.id))),
-    );
 
     return {
       success: true,
       updated_count: users.length,
-      failed_ids: uniqueIds.filter((id) => !updatedIds.has(id)),
+      failed_ids: failedIds,
       users,
     };
   }
 
   async blockUser(id: string) {
-    const { data, error } = await this.supabase.adminClient
-      .from('user_profiles')
-      .update({ status: 'blocked' })
-      .eq('id', id)
-      .eq('status', 'active')
-      .select('id, full_name, phone, deleted_at, status')
-      .single();
-
-    if (error) {
-      this.supabase.throwFromPostgresError(error);
-    }
+    const data = await this.updateAccountStatus(
+      id,
+      { status: 'blocked' },
+      { status: 'active' },
+    );
 
     if (!data) {
       throw new BadRequestException(
-        'User not found, already blocked, or deleted',
+        'Account not found, already blocked, or deleted',
       );
     }
 
     await this.cache.delete(this.cache.roleKey(id));
-
     return { success: true, user: data };
   }
 
   async unblockUser(id: string) {
-    const { data, error } = await this.supabase.adminClient
-      .from('user_profiles')
-      .update({ status: 'active' })
-      .eq('id', id)
-      .eq('status', 'blocked')
-      .select('id, full_name, phone, deleted_at, status')
-      .single();
-
-    if (error) {
-      this.supabase.throwFromPostgresError(error);
-    }
+    const data = await this.updateAccountStatus(
+      id,
+      { status: 'active', deleted_at: null },
+      { status: 'blocked' },
+    );
 
     if (!data) {
-      throw new NotFoundException('User not found or not blocked');
+      throw new NotFoundException('Account not found or not blocked');
     }
 
     await this.cache.delete(this.cache.roleKey(id));
-
     return { success: true, user: data };
   }
 

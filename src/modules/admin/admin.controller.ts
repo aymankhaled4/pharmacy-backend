@@ -62,7 +62,9 @@ export class AdminController {
   }
 
   @Get('users')
-  @ApiOperation({ summary: 'List all users with cursor pagination' })
+  @ApiOperation({
+    summary: 'List users and admins with role and cursor pagination',
+  })
   listUsers(@Query() query: ListUsersQueryDto) {
     return this.adminService.listUsers(query);
   }

@@ -32,6 +32,14 @@ export class ListUsersQueryDto {
   @IsBoolean()
   include_deleted?: boolean = false;
 
+  @ApiPropertyOptional({
+    enum: ['user', 'admin'],
+    description: 'Filter by account role',
+  })
+  @IsOptional()
+  @IsIn(['user', 'admin'])
+  role?: 'user' | 'admin';
+
   @ApiPropertyOptional({ enum: ['active', 'blocked', 'deleted'] })
   @IsOptional()
   @IsIn(['active', 'blocked', 'deleted'])

@@ -1,4 +1,9 @@
-import { Injectable, ForbiddenException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  ConflictException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { SupabaseService } from '../../database/supabase.service';
 import { UserAccountService } from '../../common/services/user-account.service';
 import { GetMyRoleResult } from '../../common/types/supabase-rpc.types';
@@ -21,7 +26,8 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto) {
-    const { data, error } = await this.supabase.adminClient.auth.admin.createUser({
+    const { data, error } =
+      await this.supabase.adminClient.auth.admin.createUser({
         email: dto.email,
         password: dto.password,
         email_confirm: true,
@@ -69,7 +75,7 @@ export class AuthService {
 
     const role = (data as GetMyRoleResult) ?? 'unknown';
 
-    if (role === 'user') {
+    if (role === 'user' || role === 'admin') {
       const accountStatus = await this.userAccount.getStatus(userId);
       return { role, accountStatus: accountStatus ?? 'active' };
     }
