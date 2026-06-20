@@ -40,7 +40,10 @@ export class AdminController {
   constructor(private adminService: AdminService) {}
 
   @Get('pharmacies')
-  @ApiOperation({ summary: 'List all pharmacies (filter by status)' })
+  @ApiOperation({
+    summary:
+      'List pharmacies (verification queue). Returns { items, nextCursor, total }.',
+  })
   listPharmacies(@Query() query: ListPharmaciesQueryDto) {
     return this.adminService.listPharmacies(query);
   }
@@ -137,7 +140,9 @@ export class AdminController {
   }
 
   @Get('analytics/overview')
-  @ApiOperation({ summary: 'System KPIs overview' })
+  @ApiOperation({
+    summary: 'System KPIs and pharmacy verification stats',
+  })
   getAnalyticsOverview() {
     return this.adminService.getAnalyticsOverview();
   }
