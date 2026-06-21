@@ -25,6 +25,7 @@ import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { CreateAccountDto } from './dto/create-account.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
+import { ActivityQueryDto } from './dto/activity-query.dto';
 import { SupabaseAuthGuard } from '../../common/guards/supabase-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -40,7 +41,10 @@ export class AdminController {
   constructor(private adminService: AdminService) {}
 
   @Get('pharmacies')
-  @ApiOperation({ summary: 'List all pharmacies (filter by status)' })
+  @ApiOperation({
+    summary:
+      'List pharmacies (verification queue). Returns { items, nextCursor, total }.',
+  })
   listPharmacies(@Query() query: ListPharmaciesQueryDto) {
     return this.adminService.listPharmacies(query);
   }
@@ -137,9 +141,17 @@ export class AdminController {
   }
 
   @Get('analytics/overview')
-  @ApiOperation({ summary: 'System KPIs overview' })
+  @ApiOperation({
+    summary: 'System KPIs and pharmacy verification stats',
+  })
   getAnalyticsOverview() {
     return this.adminService.getAnalyticsOverview();
+  }
+
+  @Get('activity-feed')
+  @ApiOperation({ summary: 'Recent admin activity feed' })
+  getActivityFeed(@Query() query: ActivityQueryDto) {
+    return this.adminService.getActivityFeed(query);
   }
 
   @Get('analytics/drugs/searched')

@@ -13,6 +13,7 @@ import { UserAccountStatus } from '../../common/types/user-account-status.type';
 import { ListPharmaciesQueryDto } from './dto/list-pharmacies-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
+import { ActivityQueryDto } from './dto/activity-query.dto';
 import { CreateAccountDto } from './dto/create-account.dto';
 
 const PHARMACY_SELECT =
@@ -101,6 +102,61 @@ interface TopPurchasedDrugRow {
   total_orders: number;
 }
 
+type ActivitySeverity = 'info' | 'success' | 'warning' | 'danger';
+
+export interface ActivityFeedItem {
+  id: string;
+  type:
+    | 'pharmacy_application'
+    | 'pharmacy_approved'
+    | 'pharmacy_rejected'
+    | 'low_inventory'
+    | 'reservation_created'
+    | 'reservation_completed'
+    | 'reservation_cancelled';
+  severity: ActivitySeverity;
+  title: string;
+  message: string;
+  createdAt: string;
+  entity: {
+    type: 'pharmacy' | 'inventory' | 'reservation';
+    id: string;
+  };
+}
+
+interface ActivityPharmacyRow {
+  id: string;
+  pharmacy_name: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  verified_at: string | null;
+}
+
+interface ActivityInventoryRow {
+  id: string;
+  quantity: number;
+  updated_at: string | null;
+  created_at: string;
+  drug:
+    | {
+        brand_name: string | null;
+        active_ingredient: string | null;
+      }
+    | null;
+}
+
+interface ActivityReservationRow {
+  id: string;
+  status: 'pending' | 'confirmed' | 'cancelled' | 'expired';
+  created_at: string;
+  confirmed_at: string | null;
+  user:
+    | {
+        full_name: string | null;
+      }
+    | null;
+}
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -111,25 +167,83 @@ export class AdminService {
   ) {}
 
   async listPharmacies(query: ListPharmaciesQueryDto) {
+    const usePagination = query.limit !== undefined && query.limit !== null;
+    const limit = query.limit ?? 0;
+    const fetchLimit = usePagination ? limit + 1 : 0;
+
     let dbQuery = this.supabase.adminClient
       .from('pharmacy_profiles')
-      .select(PHARMACY_SELECT)
-      .order('created_at', { ascending: false });
+      .select(PHARMACY_SELECT, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false });
 
     if (query.status) {
       dbQuery = dbQuery.eq('status', query.status);
     }
 
-    const { data, error } = await dbQuery;
+    if (query.search?.trim()) {
+      const term = query.search.trim();
+      dbQuery = dbQuery.or(
+        `pharmacy_name.ilike.%${term}%,license_number.ilike.%${term}%,address.ilike.%${term}%,city.ilike.%${term}%,phone.ilike.%${term}%`,
+      );
+    }
+
+    if (query.cursor) {
+      const cursor = this.decodeCursor(query.cursor);
+      dbQuery = dbQuery.or(
+        `created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`,
+      );
+    }
+
+    if (usePagination) {
+      dbQuery = dbQuery.limit(fetchLimit);
+    }
+
+    const { data, error, count } = await dbQuery;
 
     if (error) {
       this.supabase.throwFromPostgresError(error);
     }
 
-    return data ?? [];
+    const items = data ?? [];
+    const total = count ?? items.length;
+
+    if (!usePagination) {
+      return { items, nextCursor: null, total };
+    }
+
+    const hasMore = items.length > limit;
+    const page = hasMore ? items.slice(0, limit) : items;
+    const last = page[page.length - 1];
+
+    return {
+      items: page,
+      nextCursor:
+        hasMore && last
+          ? this.encodeCursor({
+              created_at: last.created_at,
+              id: last.id,
+            })
+          : null,
+      total,
+    };
   }
 
   async approvePharmacy(id: string, adminId: string) {
+    const existing = await this.getPharmacyStatus(id);
+
+    if (existing === 'approved') {
+      throw new ConflictException('Pharmacy is already approved');
+    }
+
+    if (existing === 'rejected') {
+      throw new ConflictException('Pharmacy was rejected and cannot be approved');
+    }
+
+    if (!existing) {
+      throw new NotFoundException('Pharmacy not found');
+    }
+
     const { data, error } = await this.supabase.adminClient
       .from('pharmacy_profiles')
       .update({
@@ -139,6 +253,7 @@ export class AdminService {
         rejection_reason: null,
       })
       .eq('id', id)
+      .eq('status', 'pending')
       .select(PHARMACY_SELECT)
       .single();
 
@@ -147,13 +262,29 @@ export class AdminService {
     }
 
     if (!data) {
-      throw new NotFoundException('Pharmacy not found');
+      throw new ConflictException(
+        'Pharmacy is no longer pending and could not be approved',
+      );
     }
 
     return data;
   }
 
   async rejectPharmacy(id: string, adminId: string, reason: string) {
+    const existing = await this.getPharmacyStatus(id);
+
+    if (existing === 'rejected') {
+      throw new ConflictException('Pharmacy is already rejected');
+    }
+
+    if (existing === 'approved') {
+      throw new ConflictException('Pharmacy is already approved and cannot be rejected');
+    }
+
+    if (!existing) {
+      throw new NotFoundException('Pharmacy not found');
+    }
+
     const { data, error } = await this.supabase.adminClient
       .from('pharmacy_profiles')
       .update({
@@ -163,6 +294,7 @@ export class AdminService {
         verified_at: new Date().toISOString(),
       })
       .eq('id', id)
+      .eq('status', 'pending')
       .select(PHARMACY_SELECT)
       .single();
 
@@ -171,10 +303,28 @@ export class AdminService {
     }
 
     if (!data) {
-      throw new NotFoundException('Pharmacy not found');
+      throw new ConflictException(
+        'Pharmacy is no longer pending and could not be rejected',
+      );
     }
 
     return data;
+  }
+
+  private async getPharmacyStatus(
+    id: string,
+  ): Promise<'pending' | 'approved' | 'rejected' | null> {
+    const { data, error } = await this.supabase.adminClient
+      .from('pharmacy_profiles')
+      .select('status')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) {
+      this.supabase.throwFromPostgresError(error);
+    }
+
+    return (data?.status as 'pending' | 'approved' | 'rejected') ?? null;
   }
 
   async createAccount(dto: CreateAccountDto) {
@@ -676,11 +826,20 @@ export class AdminService {
   }
 
   async getAnalyticsOverview() {
+    const todayStart = this.startOfUtcDay(new Date());
+    const yesterdayStart = this.startOfUtcDay(
+      new Date(Date.now() - 24 * 60 * 60 * 1000),
+    );
+
     const [
       activeUsers,
       pendingPharmacies,
       approvedPharmacies,
       rejectedPharmacies,
+      pendingSinceYesterday,
+      todaysApprovals,
+      recentRejections,
+      reviewedPharmacies,
       pendingReservations,
       confirmedReservations,
       cancelledReservations,
@@ -690,7 +849,7 @@ export class AdminService {
       this.supabase.adminClient
         .from('user_profiles')
         .select('id', { count: 'exact', head: true })
-        .is('deleted_at', null),
+        .neq('status', 'deleted'),
       this.supabase.adminClient
         .from('pharmacy_profiles')
         .select('id', { count: 'exact', head: true })
@@ -703,6 +862,26 @@ export class AdminService {
         .from('pharmacy_profiles')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'rejected'),
+      this.supabase.adminClient
+        .from('pharmacy_profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'pending')
+        .gte('created_at', yesterdayStart.toISOString()),
+      this.supabase.adminClient
+        .from('pharmacy_profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'approved')
+        .gte('verified_at', todayStart.toISOString()),
+      this.supabase.adminClient
+        .from('pharmacy_profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('status', 'rejected')
+        .gte('verified_at', todayStart.toISOString()),
+      this.supabase.adminClient
+        .from('pharmacy_profiles')
+        .select('created_at, verified_at')
+        .in('status', ['approved', 'rejected'])
+        .not('verified_at', 'is', null),
       this.supabase.adminClient
         .from('reservations')
         .select('id', { count: 'exact', head: true })
@@ -725,6 +904,11 @@ export class AdminService {
         .eq('status', 'confirmed'),
     ]);
 
+    const pending = pendingPharmacies.count ?? 0;
+    const approved = approvedPharmacies.count ?? 0;
+    const rejected = rejectedPharmacies.count ?? 0;
+    const reviewedTotal = approved + rejected;
+
     const revenueRows = (revenueResult.data ?? []) as RevenueRow[];
     const totalRevenue = revenueRows.reduce(
       (sum, row) => sum + Number(row.total_price ?? 0),
@@ -732,17 +916,24 @@ export class AdminService {
     );
 
     return {
+      pending_pharmacies: pending,
+      pending_pharmacies_delta: pendingSinceYesterday.count ?? 0,
+      pending_pharmacies_delta_label: 'since yesterday',
+      todays_approvals: todaysApprovals.count ?? 0,
+      recent_rejections: recentRejections.count ?? 0,
+      avg_review_time_hours: this.averageReviewTimeHours(
+        reviewedPharmacies.data ?? [],
+      ),
+      approval_rate:
+        reviewedTotal > 0 ? Math.round((approved / reviewedTotal) * 100) : null,
       users: {
         active: activeUsers.count ?? 0,
       },
       pharmacies: {
-        pending: pendingPharmacies.count ?? 0,
-        approved: approvedPharmacies.count ?? 0,
-        rejected: rejectedPharmacies.count ?? 0,
-        total:
-          (pendingPharmacies.count ?? 0) +
-          (approvedPharmacies.count ?? 0) +
-          (rejectedPharmacies.count ?? 0),
+        pending,
+        approved,
+        rejected,
+        total: pending + approved + rejected,
       },
       reservations: {
         pending: pendingReservations.count ?? 0,
@@ -759,6 +950,111 @@ export class AdminService {
         confirmed_total: totalRevenue,
       },
     };
+  }
+
+  async getActivityFeed(query: ActivityQueryDto) {
+    const limit = query.limit ?? 10;
+    const fetchLimit = Math.max(limit * 2, 10);
+
+    const [pharmaciesResult, inventoryResult, reservationsResult] =
+      await Promise.all([
+        this.supabase.adminClient
+          .from('pharmacy_profiles')
+          .select('id, pharmacy_name, status, created_at, verified_at')
+          .in('status', ['pending', 'approved', 'rejected'])
+          .order('created_at', { ascending: false })
+          .limit(fetchLimit),
+        this.supabase.adminClient
+          .from('inventory')
+          .select(
+            `
+            id,
+            quantity,
+            updated_at,
+            created_at,
+            drug:drug_id (
+              brand_name,
+              active_ingredient
+            )
+          `,
+          )
+          .eq('status', 'active')
+          .lte('quantity', 5)
+          .order('updated_at', { ascending: false })
+          .limit(fetchLimit),
+        this.supabase.adminClient
+          .from('reservations')
+          .select(
+            `
+            id,
+            status,
+            created_at,
+            confirmed_at,
+            user:user_id (
+              full_name
+            )
+          `,
+          )
+          .in('status', ['pending', 'confirmed', 'cancelled'])
+          .order('created_at', { ascending: false })
+          .limit(fetchLimit),
+      ]);
+
+    if (pharmaciesResult.error) {
+      this.supabase.throwFromPostgresError(pharmaciesResult.error);
+    }
+
+    if (inventoryResult.error) {
+      this.supabase.throwFromPostgresError(inventoryResult.error);
+    }
+
+    if (reservationsResult.error) {
+      this.supabase.throwFromPostgresError(reservationsResult.error);
+    }
+
+    const items: ActivityFeedItem[] = [
+      ...((pharmaciesResult.data ?? []) as ActivityPharmacyRow[]).map((row) =>
+        this.mapPharmacyActivity(row),
+      ),
+      ...((inventoryResult.data ?? []) as unknown as ActivityInventoryRow[]).map(
+        (row) => this.mapInventoryActivity(row),
+      ),
+      ...((reservationsResult.data ?? []) as unknown as ActivityReservationRow[])
+        .map((row) => this.mapReservationActivity(row))
+        .filter((item): item is ActivityFeedItem => item !== null),
+    ];
+
+    return {
+      items: items
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        )
+        .slice(0, limit),
+    };
+  }
+
+  private startOfUtcDay(date: Date): Date {
+    return new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
+  }
+
+  private averageReviewTimeHours(
+    rows: Array<{ created_at: string; verified_at: string | null }>,
+  ): number | null {
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const totalHours = rows.reduce((sum, row) => {
+      const ms =
+        new Date(row.verified_at!).getTime() -
+        new Date(row.created_at).getTime();
+      return sum + ms / (1000 * 60 * 60);
+    }, 0);
+
+    return Math.round((totalHours / rows.length) * 10) / 10;
   }
 
   async getTopSearchedDrugs(limit = 10) {
@@ -896,6 +1192,103 @@ export class AdminService {
       error.message.includes('Could not find the table') ||
       error.message.includes('schema cache')
     );
+  }
+
+  private mapPharmacyActivity(row: ActivityPharmacyRow): ActivityFeedItem {
+    const pharmacyName = row.pharmacy_name ?? 'Pharmacy';
+
+    if (row.status === 'approved') {
+      return {
+        id: row.id,
+        type: 'pharmacy_approved',
+        severity: 'success',
+        title: 'Admin',
+        message: `Approved ${pharmacyName} listing`,
+        createdAt: row.verified_at ?? row.created_at,
+        entity: { type: 'pharmacy', id: row.id },
+      };
+    }
+
+    if (row.status === 'rejected') {
+      return {
+        id: row.id,
+        type: 'pharmacy_rejected',
+        severity: 'danger',
+        title: 'Admin',
+        message: `Rejected ${pharmacyName} listing`,
+        createdAt: row.verified_at ?? row.created_at,
+        entity: { type: 'pharmacy', id: row.id },
+      };
+    }
+
+    return {
+      id: row.id,
+      type: 'pharmacy_application',
+      severity: 'info',
+      title: pharmacyName,
+      message: 'applied for partnership',
+      createdAt: row.created_at,
+      entity: { type: 'pharmacy', id: row.id },
+    };
+  }
+
+  private mapInventoryActivity(row: ActivityInventoryRow): ActivityFeedItem {
+    const drugName =
+      row.drug?.brand_name ?? row.drug?.active_ingredient ?? 'a medicine';
+
+    return {
+      id: row.id,
+      type: 'low_inventory',
+      severity: 'warning',
+      title: 'System',
+      message: `Low inventory alert for ${drugName}`,
+      createdAt: row.updated_at ?? row.created_at,
+      entity: { type: 'inventory', id: row.id },
+    };
+  }
+
+  private mapReservationActivity(
+    row: ActivityReservationRow,
+  ): ActivityFeedItem | null {
+    const userName = row.user?.full_name ?? 'A user';
+
+    if (row.status === 'confirmed') {
+      return {
+        id: row.id,
+        type: 'reservation_completed',
+        severity: 'info',
+        title: userName,
+        message: 'completed a reservation',
+        createdAt: row.confirmed_at ?? row.created_at,
+        entity: { type: 'reservation', id: row.id },
+      };
+    }
+
+    if (row.status === 'cancelled') {
+      return {
+        id: row.id,
+        type: 'reservation_cancelled',
+        severity: 'danger',
+        title: userName,
+        message: 'cancelled a reservation',
+        createdAt: row.created_at,
+        entity: { type: 'reservation', id: row.id },
+      };
+    }
+
+    if (row.status === 'pending') {
+      return {
+        id: row.id,
+        type: 'reservation_created',
+        severity: 'info',
+        title: userName,
+        message: 'created a reservation',
+        createdAt: row.created_at,
+        entity: { type: 'reservation', id: row.id },
+      };
+    }
+
+    return null;
   }
 
   private encodeCursor(payload: CursorPayload): string {
