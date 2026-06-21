@@ -92,11 +92,30 @@ export class InventoryService {
       );
     }
 
-    // Run both queries in parallel
-    const [countResult, dataResult] = await Promise.all([countQuery, query]);
+    // Run all queries in parallel: data + total count + nearExpiry count + outOfStock count
+    const [countResult, dataResult, nearExpiryResult, outOfStockResult] = await Promise.all([
+      countQuery,
+      query,
+      // nearExpiryCount: active items expiring within 90 days
+      this.supabase.adminClient
+        .from('inventory')
+        .select('id', { count: 'exact', head: true })
+        .eq('pharmacy_id', pharmacyId)
+        .eq('status', 'active')
+        .gte('expiry_date', this.getTodayDateString())
+        .lte('expiry_date', this.getDateDaysFromNow(90)),
+      // outOfStockCount: quantity = 0 OR status = 'out_of_stock'
+      this.supabase.adminClient
+        .from('inventory')
+        .select('id', { count: 'exact', head: true })
+        .eq('pharmacy_id', pharmacyId)
+        .or('quantity.eq.0,status.eq.out_of_stock'),
+    ]);
 
     if (countResult.error) this.supabase.throwFromPostgresError(countResult.error);
     if (dataResult.error) this.supabase.throwFromPostgresError(dataResult.error);
+    if (nearExpiryResult.error) this.supabase.throwFromPostgresError(nearExpiryResult.error);
+    if (outOfStockResult.error) this.supabase.throwFromPostgresError(outOfStockResult.error);
 
     let items = dataResult.data ?? [];
 
@@ -126,6 +145,8 @@ export class InventoryService {
           ? this.encodeCursor({ created_at: last.created_at as string, id: last.id })
           : null,
       total: countResult.count ?? 0,
+      nearExpiryCount: nearExpiryResult.count ?? 0,
+      outOfStockCount: outOfStockResult.count ?? 0,
     };
   }
 
