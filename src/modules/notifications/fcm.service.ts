@@ -39,6 +39,21 @@ export class FcmService {
         token: fcmToken,
         notification: { title, body },
         data,
+        android: {
+          notification: {
+            channelId: 'dawak_high_importance',
+            priority: 'high',
+          },
+          priority: 'high',
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
       };
 
       await getMessaging().send(message);
