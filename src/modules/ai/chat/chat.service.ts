@@ -8,7 +8,7 @@ import { CHAT_TOOLS } from './chat.tools';
 import { ChatMessageDto } from './dto/chat-message.dto';
 
 const MAX_TOOL_ITERATIONS = 6;
-const MAX_HISTORY_MESSAGES = 20; // يحافظ على الـ token budget في محادثات طويلة
+const MAX_HISTORY_MESSAGES = 20;
 
 @Injectable()
 export class ChatService {
@@ -44,8 +44,15 @@ export class ChatService {
             .catch(() => null);
 
         const systemPrompt = this.buildSystemPrompt(dto.latitude, dto.longitude);
-        const trimmedHistory = (dto.conversationHistory ?? []).slice(-MAX_HISTORY_MESSAGES);
-
+        const trimmedHistory = (dto.conversationHistory ?? [])
+            .filter(
+                (m): m is OpenAI.Chat.ChatCompletionMessageParam =>
+                    !!m &&
+                    typeof m === 'object' &&
+                    !Array.isArray(m) &&
+                    'role' in m,
+            )
+            .slice(-MAX_HISTORY_MESSAGES);
         const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
             { role: 'system', content: systemPrompt },
             ...trimmedHistory,
@@ -152,7 +159,14 @@ export class ChatService {
             finalMessage.content?.trim() ||
             'حدث خطأ بسيط، ممكن تعيد سؤالك؟ / Something went wrong, could you rephrase your question?';
 
-        const updatedHistory = messages.filter((m) => m.role !== 'system');
+        const updatedHistory = messages.filter(
+            (m): m is OpenAI.Chat.ChatCompletionMessageParam =>
+                !!m &&
+                typeof m === 'object' &&
+                !Array.isArray(m) &&
+                'role' in m &&
+                m.role !== 'system',
+        );
 
         return { reply, updatedHistory };
     }
