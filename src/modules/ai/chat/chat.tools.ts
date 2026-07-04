@@ -30,7 +30,7 @@ export const CHAT_TOOLS: OpenAI.Chat.Completions.ChatCompletionFunctionTool[] = 
                 properties: {
                     drug_id: {
                         type: 'string',
-                        description: 'The UUID of the drug to search for.',
+                        description: 'The exact drug_id UUID from search_drug results. Must be a valid UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx), never a generated or guessed string.',
                     },
                     lat: {
                         type: 'number',
